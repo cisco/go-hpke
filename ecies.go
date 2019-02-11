@@ -11,17 +11,24 @@ const (
 	debug = false
 )
 
-type DHPrivateKey interface {
-	PublicKey() DHPublicKey
+type KEMPrivateKey interface {
+	PublicKey() KEMPublicKey
 }
 
-type DHPublicKey interface {
+type KEMPublicKey interface {
 	Bytes() []byte
 }
 
+type KEMScheme interface {
+	Generate(rand io.Reader) (KEMPrivateKey, KEMPublicKey, error)
+	Encap(rand io.Reader, pub KEMPublicKey) ([]byte, []byte, error)
+	Decap(enc []byte, priv KEMPrivateKey) ([]byte, error)
+}
+
 type DHScheme interface {
-	Generate(rand io.Reader) (DHPrivateKey, DHPublicKey, error)
-	Derive(priv DHPrivateKey, pub DHPublicKey) ([]byte, error)
+	ParsePublicKey(enc []byte) (KEMPublicKey, error)
+	Generate(rand io.Reader) (KEMPrivateKey, KEMPublicKey, error)
+	Derive(priv KEMPrivateKey, pub KEMPublicKey) ([]byte, error)
 }
 
 type AEADScheme interface {
@@ -36,11 +43,11 @@ type KDFScheme interface {
 	OutputSize() int
 }
 
-type Ciphersuite struct {
+type CipherSuite struct {
 	ID   byte
-	DH   DHScheme
-	AEAD AEADScheme
+	KEM  KEMScheme
 	KDF  KDFScheme
+	AEAD AEADScheme
 }
 
 func logString(val string) {
@@ -55,89 +62,88 @@ func logVal(name string, value []byte) {
 	}
 }
 
-func setup(initiator bool, suite Ciphersuite, priv DHPrivateKey, pub DHPublicKey, info []byte) (key, nonce []byte, err error) {
-	// zz = DH(skE, pkR)
-	zz, err := suite.DH.Derive(priv, pub)
-	if err != nil {
-		return nil, nil, err
-	}
-
+func setupCore(suite CipherSuite, zz []byte, enc []byte, pkR KEMPublicKey, info []byte) (keyIR, nonceIR []byte) {
 	// secret = Extract(0, zz)
 	zero := bytes.Repeat([]byte{0}, suite.KDF.OutputSize())
 	secret := suite.KDF.Extract(zero, zz)
 
+	logVal("secret", secret)
+
 	// context = ciphersuite || Marshal(pkE) || Marshal(pkR) || info
 	context := []byte{suite.ID}
-	if initiator {
-		context = append(context, priv.PublicKey().Bytes()...)
-		context = append(context, pub.Bytes()...)
-	} else {
-		context = append(context, pub.Bytes()...)
-		context = append(context, priv.PublicKey().Bytes()...)
-	}
+	context = append(context, enc...)
+	context = append(context, pkR.Bytes()...)
 	context = append(context, info...)
 
-	// keyIR = Expand(secret, "ecies key" || context, Nk)
-	keyContext := append([]byte("ecies key"), context...)
-	keyIR := suite.KDF.Expand(secret, keyContext, suite.AEAD.KeySize())
+	logVal("context", context)
 
-	// nonceIR = Expand(secret, "ecies nonce" || context, Nk)
-	nonceContext := append([]byte("ecies nonce"), context...)
-	nonceIR := suite.KDF.Expand(secret, nonceContext, suite.AEAD.NonceSize())
+	// keyIR = Expand(secret, "hpke key" || context, Nk)
+	keyContext := append([]byte("hpke key"), context...)
+	keyIR = suite.KDF.Expand(secret, keyContext, suite.AEAD.KeySize())
 
-	return keyIR, nonceIR, nil
+	// nonceIR = Expand(secret, "hpke nonce" || context, Nn)
+	nonceContext := append([]byte("hpke nonce"), context...)
+	nonceIR = suite.KDF.Expand(secret, nonceContext, suite.AEAD.NonceSize())
+	return
 }
 
-func Seal(suite Ciphersuite, rand io.Reader, pubR DHPublicKey, pt, info, aad []byte) (DHPublicKey, []byte, error) {
-	logString("=== ECIES Seal ===")
+func setupI(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, info []byte) (enc, key, nonce []byte, err error) {
+	// zz, enc = Encap(pkR)
+	zz, enc, err := suite.KEM.Encap(rand, pkR)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 
-	// (skE, pkE) = GenerateKeyPair()
-	privE, pubE, err := suite.DH.Generate(rand)
+	keyIR, nonceIR := setupCore(suite, zz, enc, pkR, info)
+	return enc, keyIR, nonceIR, nil
+}
+
+func setupR(suite CipherSuite, enc []byte, skR KEMPrivateKey, info []byte) (key, nonce []byte, err error) {
+	// zz = Decap(enc, skR)
+	zz, err := suite.KEM.Decap(enc, skR)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	logVal("pubR", pubR.Bytes())
-	logVal("pubE", pubE.Bytes())
+	key, nonce = setupCore(suite, zz, enc, skR.PublicKey(), info)
+	return
+}
 
-	// ... (remainder of SetupI)
-	keyIR, nonceIR, err := setup(true, suite, privE, pubR, info)
+func Seal(suite CipherSuite, rand io.Reader, pubR KEMPublicKey, info, aad, pt []byte) ([]byte, []byte, error) {
+	logString("=== Seal ===")
+
+	// enc, keyIR, nonceIR = SetupI(ciphersuite, pkR, info)
+	enc, keyIR, nonceIR, err := setupI(suite, rand, pubR, info)
 	if err != nil {
 		return nil, nil, err
 	}
-	logVal("key", keyIR)
-	logVal("nonce", nonceIR)
-	logVal("aad", aad)
 
-	// 3. ct := Seal(keyIR, nonceIR, aad, pt)
+	logVal("enc", enc)
+	logVal("keyIR", keyIR)
+	logVal("nonceIR", keyIR)
+
+	// ct = Seal(keyIR, nonceIR, aad, pt)
 	aead, err := suite.AEAD.New(keyIR)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	ct := aead.Seal(nil, nonceIR, pt, aad)
-
-	logVal("pt", pt)
-	logVal("ct", ct)
-
-	return pubE, ct, nil
+	return enc, ct, nil
 }
 
-func Open(suite Ciphersuite, privR DHPrivateKey, pubE DHPublicKey, ct, info, aad []byte) ([]byte, error) {
-	logString("=== ECIES Open ===")
+func Open(suite CipherSuite, privR KEMPrivateKey, enc, info, aad, ct []byte) ([]byte, error) {
+	logString("=== Open ===")
 
-	logVal("pubR", privR.PublicKey().Bytes())
-	logVal("pubE", pubE.Bytes())
-
-	// ... (SetupR)
-	keyIR, nonceIR, err := setup(false, suite, privR, pubE, info)
+	// keyIR, nonceIR = SetupR(ciphersuite, enc, pkR, info)
+	keyIR, nonceIR, err := setupR(suite, enc, privR, info)
 	if err != nil {
 		return nil, err
 	}
 
-	logVal("key", keyIR)
-	logVal("nonce", nonceIR)
-	logVal("aad", aad)
+	logVal("enc", enc)
+	logVal("keyIR", keyIR)
+	logVal("nonceIR", keyIR)
 
 	// 2. ct := Open(keyIR, nonceIR, aad, ct)
 	aead, err := suite.AEAD.New(keyIR)
@@ -146,9 +152,6 @@ func Open(suite Ciphersuite, privR DHPrivateKey, pubE DHPublicKey, ct, info, aad
 	}
 
 	pt, err := aead.Open(nil, nonceIR, ct, aad)
-
-	logVal("ct", ct)
-	logVal("pt", pt)
 
 	return pt, err
 }
