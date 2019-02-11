@@ -1,4 +1,4 @@
-package ecies
+package hpke
 
 import (
 	"bytes"

@@ -1,4 +1,4 @@
-package ecies
+package hpke
 
 import (
 	"bytes"
@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestECIES(t *testing.T) {
+func TestHPKE(t *testing.T) {
 	suites := []byte{
 		X25519_HKDF_SHA256_AESGCM128,
 		X25519_HKDF_SHA256_CHACHA20POLY1305,
