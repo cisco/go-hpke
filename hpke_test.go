@@ -6,11 +6,15 @@ import (
 	"testing"
 )
 
-func TestBase(t *testing.T) {
-	original := []byte("Beauty is truth, truth beauty")
-	aad := []byte("that is all // Ye know on earth, and all ye need to know")
-	info := []byte("Ode on a Grecian Urn")
+var (
+	psk      = []byte("mellon")
+	pskID    = []byte("Ennyn Durin aran Moria")
+	original = []byte("Beauty is truth, truth beauty")
+	aad      = []byte("that is all // Ye know on earth, and all ye need to know")
+	info     = []byte("Ode on a Grecian Urn")
+)
 
+func TestBase(t *testing.T) {
 	for id, suite := range ciphersuites {
 		skR, pkR, err := suite.KEM.Generate(rand.Reader)
 		if err != nil {
@@ -33,12 +37,6 @@ func TestBase(t *testing.T) {
 }
 
 func TestPSK(t *testing.T) {
-	psk := []byte("mellon")
-	pskID := []byte("Ennyn Durin aran Moria")
-	original := []byte("Beauty is truth, truth beauty")
-	aad := []byte("that is all // Ye know on earth, and all ye need to know")
-	info := []byte("Ode on a Grecian Urn")
-
 	for id, suite := range ciphersuites {
 		skR, pkR, err := suite.KEM.Generate(rand.Reader)
 		if err != nil {
@@ -62,10 +60,6 @@ func TestPSK(t *testing.T) {
 }
 
 func TestAuth(t *testing.T) {
-	original := []byte("Beauty is truth, truth beauty")
-	aad := []byte("that is all // Ye know on earth, and all ye need to know")
-	info := []byte("Ode on a Grecian Urn")
-
 	for id, suite := range ciphersuites {
 		skI, pkI, err := suite.KEM.Generate(rand.Reader)
 		if err != nil {

@@ -81,7 +81,27 @@ func setupCore(suite CipherSuite, secret, kemContext, info []byte) (keyIR, nonce
 	nonceContext := append([]byte("hpke nonce"), context...)
 	nonceIR = suite.KDF.Expand(secret, nonceContext, suite.AEAD.NonceSize())
 	return
+}
 
+func sealCore(suite CipherSuite, key, nonce, aad, pt []byte) ([]byte, error) {
+	// ct = Seal(keyIR, nonceIR, aad, pt)
+	aead, err := suite.AEAD.New(key)
+	if err != nil {
+		return nil, err
+	}
+
+	ct := aead.Seal(nil, nonce, pt, aad)
+	return ct, err
+}
+
+func openCore(suite CipherSuite, key, nonce, aad, ct []byte) ([]byte, error) {
+	// pt := Open(keyIR, nonceIR, aad, ct)
+	aead, err := suite.AEAD.New(key)
+	if err != nil {
+		return nil, err
+	}
+
+	return aead.Open(nil, nonce, ct, aad)
 }
 
 ///////
@@ -128,13 +148,7 @@ func Seal(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, info, aad, pt []b
 		return nil, nil, err
 	}
 
-	// ct = Seal(keyIR, nonceIR, aad, pt)
-	aead, err := suite.AEAD.New(keyIR)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	ct := aead.Seal(nil, nonceIR, pt, aad)
+	ct, err := sealCore(suite, keyIR, nonceIR, aad, pt)
 	return enc, ct, nil
 }
 
@@ -145,15 +159,7 @@ func Open(suite CipherSuite, skR KEMPrivateKey, enc, info, aad, ct []byte) ([]by
 		return nil, err
 	}
 
-	// 2. ct := Open(keyIR, nonceIR, aad, ct)
-	aead, err := suite.AEAD.New(keyIR)
-	if err != nil {
-		return nil, err
-	}
-
-	pt, err := aead.Open(nil, nonceIR, ct, aad)
-
-	return pt, err
+	return openCore(suite, keyIR, nonceIR, aad, ct)
 }
 
 //////
@@ -200,14 +206,8 @@ func SealPSK(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, psk, pskID, in
 		return nil, nil, err
 	}
 
-	// ct = Seal(keyIR, nonceIR, aad, pt)
-	aead, err := suite.AEAD.New(keyIR)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	ct := aead.Seal(nil, nonceIR, pt, aad)
-	return enc, ct, nil
+	ct, err := sealCore(suite, keyIR, nonceIR, aad, pt)
+	return enc, ct, err
 }
 
 func OpenPSK(suite CipherSuite, skR KEMPrivateKey, enc, psk, pskID, info, aad, ct []byte) ([]byte, error) {
@@ -217,15 +217,7 @@ func OpenPSK(suite CipherSuite, skR KEMPrivateKey, enc, psk, pskID, info, aad, c
 		return nil, err
 	}
 
-	// 2. ct := Open(keyIR, nonceIR, aad, ct)
-	aead, err := suite.AEAD.New(keyIR)
-	if err != nil {
-		return nil, err
-	}
-
-	pt, err := aead.Open(nil, nonceIR, ct, aad)
-
-	return pt, err
+	return openCore(suite, keyIR, nonceIR, aad, ct)
 }
 
 ///////
@@ -273,14 +265,8 @@ func SealAuth(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, skI KEMPrivat
 		return nil, nil, err
 	}
 
-	// ct = Seal(keyIR, nonceIR, aad, pt)
-	aead, err := suite.AEAD.New(keyIR)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	ct := aead.Seal(nil, nonceIR, pt, aad)
-	return enc, ct, nil
+	ct, err := sealCore(suite, keyIR, nonceIR, aad, pt)
+	return enc, ct, err
 }
 
 func OpenAuth(suite CipherSuite, skR KEMPrivateKey, pkI KEMPublicKey, enc, info, aad, ct []byte) ([]byte, error) {
@@ -290,13 +276,5 @@ func OpenAuth(suite CipherSuite, skR KEMPrivateKey, pkI KEMPublicKey, enc, info,
 		return nil, err
 	}
 
-	// 2. ct := Open(keyIR, nonceIR, aad, ct)
-	aead, err := suite.AEAD.New(keyIR)
-	if err != nil {
-		return nil, err
-	}
-
-	pt, err := aead.Open(nil, nonceIR, ct, aad)
-
-	return pt, err
+	return openCore(suite, keyIR, nonceIR, aad, ct)
 }
