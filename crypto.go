@@ -375,17 +375,17 @@ func (s hkdfScheme) OutputSize() int {
 // Pre-defined ciphersuites
 
 const (
-	X25519_HKDF_SHA256_AESGCM128        byte = 0x01
-	X25519_HKDF_SHA256_CHACHA20POLY1305 byte = 0x02
-	X448_HKDF_SHA512_AESGCM256          byte = 0x03
-	X448_HKDF_SHA512_CHACHA20POLY1305   byte = 0x04
-	P256_HKDF_SHA256_AESGCM128          byte = 0x05
-	P256_HKDF_SHA256_CHACHA20POLY1305   byte = 0x06
-	P521_HKDF_SHA512_AESGCM256          byte = 0x07
-	P521_HKDF_SHA512_CHACHA20POLY1305   byte = 0x08
+	X25519_HKDF_SHA256_AESGCM128        uint16 = 0x01
+	X25519_HKDF_SHA256_CHACHA20POLY1305 uint16 = 0x02
+	X448_HKDF_SHA512_AESGCM256          uint16 = 0x03
+	X448_HKDF_SHA512_CHACHA20POLY1305   uint16 = 0x04
+	P256_HKDF_SHA256_AESGCM128          uint16 = 0x05
+	P256_HKDF_SHA256_CHACHA20POLY1305   uint16 = 0x06
+	P521_HKDF_SHA512_AESGCM256          uint16 = 0x07
+	P521_HKDF_SHA512_CHACHA20POLY1305   uint16 = 0x08
 )
 
-var ciphersuites = map[byte]CipherSuite{
+var ciphersuites = map[uint16]CipherSuite{
 	X25519_HKDF_SHA256_AESGCM128: {
 		ID:   X25519_HKDF_SHA256_AESGCM128,
 		KEM:  dhkemScheme{x25519Scheme{}},
@@ -443,7 +443,7 @@ var ciphersuites = map[byte]CipherSuite{
 	},
 }
 
-func GetRegisteredCipherSuite(id byte) (CipherSuite, error) {
+func GetRegisteredCipherSuite(id uint16) (CipherSuite, error) {
 	suite, ok := ciphersuites[id]
 	if !ok {
 		return CipherSuite{}, fmt.Errorf("Unknown ciphersuite id")

@@ -14,25 +14,36 @@ var (
 	info     = []byte("Ode on a Grecian Urn")
 )
 
+func roundTrip(t *testing.T, id uint16, enc *Context, dec *Context) {
+	encrypted := enc.Seal(aad, original)
+	decrypted, err := dec.Open(aad, encrypted)
+	if err != nil {
+		t.Fatalf("[%d] Error in Open: %s", id, err)
+	}
+
+	if !bytes.Equal(decrypted, original) {
+		t.Fatalf("[%d] Incorrect decryption: [%x] != [%x]", id, decrypted, original)
+	}
+}
+
 func TestBase(t *testing.T) {
 	for id, suite := range ciphersuites {
 		skR, pkR, err := suite.KEM.Generate(rand.Reader)
 		if err != nil {
 			t.Fatalf("[%d] Error generating DH key pair: %s", id, err)
 		}
-		enc, encrypted, err := Seal(suite, rand.Reader, pkR, info, aad, original)
+
+		enc, ctxI, err := SetupIBase(suite, rand.Reader, pkR, info)
 		if err != nil {
-			t.Fatalf("[%d] Error in Seal: %s", id, err)
+			t.Fatalf("[%d] Error in SetupIBase: %s", id, err)
 		}
 
-		decrypted, err := Open(suite, skR, enc, info, aad, encrypted)
+		ctxR, err := SetupRBase(suite, skR, enc, info)
 		if err != nil {
-			t.Fatalf("[%d] Error in Open: %s", id, err)
+			t.Fatalf("[%d] Error in SetupIBase: %s", id, err)
 		}
 
-		if !bytes.Equal(decrypted, original) {
-			t.Fatalf("[%d] Incorrect decryption: [%x] != [%x]", id, decrypted, original)
-		}
+		roundTrip(t, id, ctxI, ctxR)
 	}
 }
 
@@ -43,19 +54,17 @@ func TestPSK(t *testing.T) {
 			t.Fatalf("[%d] Error generating DH key pair: %s", id, err)
 		}
 
-		enc, encrypted, err := SealPSK(suite, rand.Reader, pkR, psk, pskID, info, aad, original)
+		enc, ctxI, err := SetupIPSK(suite, rand.Reader, pkR, psk, pskID, info)
 		if err != nil {
-			t.Fatalf("[%d] Error in Seal: %s", id, err)
+			t.Fatalf("[%d] Error in SetupIPSK: %s", id, err)
 		}
 
-		decrypted, err := OpenPSK(suite, skR, enc, psk, pskID, info, aad, encrypted)
+		ctxR, err := SetupRPSK(suite, skR, enc, psk, pskID, info)
 		if err != nil {
-			t.Fatalf("[%d] Error in Open: %s", id, err)
+			t.Fatalf("[%d] Error in SetupIBase: %s", id, err)
 		}
 
-		if !bytes.Equal(decrypted, original) {
-			t.Fatalf("[%d] Incorrect decryption: [%x] != [%x]", id, decrypted, original)
-		}
+		roundTrip(t, id, ctxI, ctxR)
 	}
 }
 
@@ -71,18 +80,16 @@ func TestAuth(t *testing.T) {
 			t.Fatalf("[%d] Error generating responder DH key pair: %s", id, err)
 		}
 
-		enc, encrypted, err := SealAuth(suite, rand.Reader, pkR, skI, info, aad, original)
+		enc, ctxI, err := SetupIAuth(suite, rand.Reader, pkR, skI, info)
 		if err != nil {
-			t.Fatalf("[%d] Error in Seal: %s", id, err)
+			t.Fatalf("[%d] Error in SetupIAuth: %s", id, err)
 		}
 
-		decrypted, err := OpenAuth(suite, skR, pkI, enc, info, aad, encrypted)
+		ctxR, err := SetupRAuth(suite, skR, pkI, enc, info)
 		if err != nil {
-			t.Fatalf("[%d] Error in Open: %s", id, err)
+			t.Fatalf("[%d] Error in SetupIBase: %s", id, err)
 		}
 
-		if !bytes.Equal(decrypted, original) {
-			t.Fatalf("[%d] Incorrect decryption: [%x] != [%x]", id, decrypted, original)
-		}
+		roundTrip(t, id, ctxI, ctxR)
 	}
 }
