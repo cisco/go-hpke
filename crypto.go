@@ -29,31 +29,72 @@ func (s dhkemScheme) Generate(rand io.Reader) (KEMPrivateKey, KEMPublicKey, erro
 	return s.group.Generate(rand)
 }
 
-func (s dhkemScheme) Encap(rand io.Reader, pubR KEMPublicKey) ([]byte, []byte, error) {
-	privE, pubE, err := s.group.Generate(rand)
+func (s dhkemScheme) Encap(rand io.Reader, pkR KEMPublicKey) ([]byte, []byte, error) {
+	skE, pkE, err := s.group.Generate(rand)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	zz, err := s.group.Derive(privE, pubR)
+	zz, err := s.group.Derive(skE, pkR)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	return zz, pubE.Bytes(), nil
+	return zz, pkE.Bytes(), nil
 }
 
-func (s dhkemScheme) Decap(enc []byte, privR KEMPrivateKey) ([]byte, error) {
-	pubE, err := s.group.ParsePublicKey(enc)
+func (s dhkemScheme) Decap(enc []byte, skR KEMPrivateKey) ([]byte, error) {
+	pkE, err := s.group.ParsePublicKey(enc)
 	if err != nil {
 		return nil, err
 	}
 
-	zz, err := s.group.Derive(privR, pubE)
+	zz, err := s.group.Derive(skR, pkE)
 	if err != nil {
 		return nil, err
 	}
 
+	return zz, nil
+}
+
+func (s dhkemScheme) AuthEncap(rand io.Reader, pkR KEMPublicKey, skI KEMPrivateKey) ([]byte, []byte, error) {
+
+	skE, pkE, err := s.group.Generate(rand)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	zzER, err := s.group.Derive(skE, pkR)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	zzIR, err := s.group.Derive(skI, pkR)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	zz := append(zzER, zzIR...)
+	return zz, pkE.Bytes(), nil
+}
+
+func (s dhkemScheme) AuthDecap(enc []byte, skR KEMPrivateKey, pkI KEMPublicKey) ([]byte, error) {
+	pkE, err := s.group.ParsePublicKey(enc)
+	if err != nil {
+		return nil, err
+	}
+
+	zzER, err := s.group.Derive(skR, pkE)
+	if err != nil {
+		return nil, err
+	}
+
+	zzIR, err := s.group.Derive(skR, pkI)
+	if err != nil {
+		return nil, err
+	}
+
+	zz := append(zzER, zzIR...)
 	return zz, nil
 }
 
