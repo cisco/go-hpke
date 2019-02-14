@@ -12,17 +12,20 @@ var (
 	original = []byte("Beauty is truth, truth beauty")
 	aad      = []byte("that is all // Ye know on earth, and all ye need to know")
 	info     = []byte("Ode on a Grecian Urn")
+	rtts     = 10
 )
 
-func roundTrip(t *testing.T, id uint16, enc *Context, dec *Context) {
-	encrypted := enc.Seal(aad, original)
-	decrypted, err := dec.Open(aad, encrypted)
-	if err != nil {
-		t.Fatalf("[%d] Error in Open: %s", id, err)
-	}
+func roundTrip(t *testing.T, id uint16, enc *EncryptContext, dec *DecryptContext) {
+	for range make([]struct{}, rtts) {
+		encrypted := enc.Seal(aad, original)
+		decrypted, err := dec.Open(aad, encrypted)
+		if err != nil {
+			t.Fatalf("[%d] Error in Open: %s", id, err)
+		}
 
-	if !bytes.Equal(decrypted, original) {
-		t.Fatalf("[%d] Incorrect decryption: [%x] != [%x]", id, decrypted, original)
+		if !bytes.Equal(decrypted, original) {
+			t.Fatalf("[%d] Incorrect decryption: [%x] != [%x]", id, decrypted, original)
+		}
 	}
 }
 
