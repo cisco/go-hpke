@@ -22,7 +22,7 @@ func TestKEMSchemes(t *testing.T) {
 	}
 
 	for i, s := range schemes {
-		skR, pkR, err := s.Generate(rand.Reader)
+		skR, pkR, err := s.GenerateKeyPair(rand.Reader)
 		if err != nil {
 			t.Fatalf("[%d] Error generating KEM key pair: %v", i, err)
 		}
@@ -44,7 +44,7 @@ func TestKEMSchemes(t *testing.T) {
 }
 
 func TestDHSchemes(t *testing.T) {
-	schemes := []DHScheme{
+	schemes := []dhScheme{
 		ecdhScheme{curve: elliptic.P256()},
 		ecdhScheme{curve: elliptic.P521()},
 		x25519Scheme{},
@@ -52,28 +52,28 @@ func TestDHSchemes(t *testing.T) {
 	}
 
 	for i, s := range schemes {
-		skA, pkA, err := s.Generate(rand.Reader)
+		skA, pkA, err := s.GenerateKeyPair(rand.Reader)
 		if err != nil {
 			t.Fatalf("[%d] Error generating DH key pair: %v", i, err)
 		}
 
-		skB, pkB, err := s.Generate(rand.Reader)
+		skB, pkB, err := s.GenerateKeyPair(rand.Reader)
 		if err != nil {
 			t.Fatalf("[%d] Error generating DH key pair: %v", i, err)
 		}
 
-		enc := pkA.Bytes()
-		_, err = s.ParsePublicKey(enc)
+		enc := s.Marshal(pkA)
+		_, err = s.Unmarshal(enc)
 		if err != nil {
 			t.Fatalf("[%d] Error parsing DH public key: %v", i, err)
 		}
 
-		zzAB, err := s.Derive(skA, pkB)
+		zzAB, err := s.DH(skA, pkB)
 		if err != nil {
 			t.Fatalf("[%d] Error performing DH operation: %v", i, err)
 		}
 
-		zzBA, err := s.Derive(skB, pkA)
+		zzBA, err := s.DH(skB, pkA)
 		if err != nil {
 			t.Fatalf("[%d] Error performing DH operation: %v", i, err)
 		}
@@ -82,8 +82,8 @@ func TestDHSchemes(t *testing.T) {
 			t.Fatalf("[%d] Asymmetric DH results [%x] != [%x]", i, zzAB, zzBA)
 		}
 
-		if len(pkA.Bytes()) != len(pkB.Bytes()) {
-			t.Fatalf("[%d] Non-constant public key size [%x] != [%x]", i, len(pkA.Bytes()), len(pkB.Bytes()))
+		if len(s.Marshal(pkA)) != len(s.Marshal(pkB)) {
+			t.Fatalf("[%d] Non-constant public key size [%x] != [%x]", i, len(s.Marshal(pkA)), len(s.Marshal(pkB)))
 		}
 	}
 }

@@ -31,19 +31,19 @@ func roundTrip(t *testing.T, id uint16, enc *EncryptContext, dec *DecryptContext
 
 func TestBase(t *testing.T) {
 	for id, suite := range ciphersuites {
-		skR, pkR, err := suite.KEM.Generate(rand.Reader)
+		skR, pkR, err := suite.KEM.GenerateKeyPair(rand.Reader)
 		if err != nil {
 			t.Fatalf("[%d] Error generating DH key pair: %s", id, err)
 		}
 
-		enc, ctxI, err := SetupIBase(suite, rand.Reader, pkR, info)
+		enc, ctxI, err := SetupBaseI(suite, rand.Reader, pkR, info)
 		if err != nil {
-			t.Fatalf("[%d] Error in SetupIBase: %s", id, err)
+			t.Fatalf("[%d] Error in SetupBaseI: %s", id, err)
 		}
 
-		ctxR, err := SetupRBase(suite, skR, enc, info)
+		ctxR, err := SetupBaseR(suite, skR, enc, info)
 		if err != nil {
-			t.Fatalf("[%d] Error in SetupIBase: %s", id, err)
+			t.Fatalf("[%d] Error in SetupBaseI: %s", id, err)
 		}
 
 		roundTrip(t, id, ctxI, ctxR)
@@ -52,19 +52,19 @@ func TestBase(t *testing.T) {
 
 func TestPSK(t *testing.T) {
 	for id, suite := range ciphersuites {
-		skR, pkR, err := suite.KEM.Generate(rand.Reader)
+		skR, pkR, err := suite.KEM.GenerateKeyPair(rand.Reader)
 		if err != nil {
 			t.Fatalf("[%d] Error generating DH key pair: %s", id, err)
 		}
 
-		enc, ctxI, err := SetupIPSK(suite, rand.Reader, pkR, psk, pskID, info)
+		enc, ctxI, err := SetupPSKI(suite, rand.Reader, pkR, psk, pskID, info)
 		if err != nil {
-			t.Fatalf("[%d] Error in SetupIPSK: %s", id, err)
+			t.Fatalf("[%d] Error in SetupPSKI: %s", id, err)
 		}
 
-		ctxR, err := SetupRPSK(suite, skR, enc, psk, pskID, info)
+		ctxR, err := SetupPSKR(suite, skR, enc, psk, pskID, info)
 		if err != nil {
-			t.Fatalf("[%d] Error in SetupIBase: %s", id, err)
+			t.Fatalf("[%d] Error in SetupBaseI: %s", id, err)
 		}
 
 		roundTrip(t, id, ctxI, ctxR)
@@ -73,24 +73,24 @@ func TestPSK(t *testing.T) {
 
 func TestAuth(t *testing.T) {
 	for id, suite := range ciphersuites {
-		skI, pkI, err := suite.KEM.Generate(rand.Reader)
+		skI, pkI, err := suite.KEM.GenerateKeyPair(rand.Reader)
 		if err != nil {
 			t.Fatalf("[%d] Error generating initiator DH key pair: %s", id, err)
 		}
 
-		skR, pkR, err := suite.KEM.Generate(rand.Reader)
+		skR, pkR, err := suite.KEM.GenerateKeyPair(rand.Reader)
 		if err != nil {
 			t.Fatalf("[%d] Error generating responder DH key pair: %s", id, err)
 		}
 
-		enc, ctxI, err := SetupIAuth(suite, rand.Reader, pkR, skI, info)
+		enc, ctxI, err := SetupAuthI(suite, rand.Reader, pkR, skI, info)
 		if err != nil {
-			t.Fatalf("[%d] Error in SetupIAuth: %s", id, err)
+			t.Fatalf("[%d] Error in SetupAuthI: %s", id, err)
 		}
 
-		ctxR, err := SetupRAuth(suite, skR, pkI, enc, info)
+		ctxR, err := SetupAuthR(suite, skR, pkI, enc, info)
 		if err != nil {
-			t.Fatalf("[%d] Error in SetupIBase: %s", id, err)
+			t.Fatalf("[%d] Error in SetupBaseI: %s", id, err)
 		}
 
 		roundTrip(t, id, ctxI, ctxR)

@@ -21,35 +21,50 @@ import (
 ////////
 // DHKEM
 
-type dhkemScheme struct {
-	group DHScheme
+type dhScheme interface {
+	GenerateKeyPair(rand io.Reader) (KEMPrivateKey, KEMPublicKey, error)
+	Marshal(pk KEMPublicKey) []byte
+	Unmarshal(enc []byte) (KEMPublicKey, error)
+	DH(priv KEMPrivateKey, pub KEMPublicKey) ([]byte, error)
 }
 
-func (s dhkemScheme) Generate(rand io.Reader) (KEMPrivateKey, KEMPublicKey, error) {
-	return s.group.Generate(rand)
+type dhkemScheme struct {
+	group dhScheme
+}
+
+func (s dhkemScheme) GenerateKeyPair(rand io.Reader) (KEMPrivateKey, KEMPublicKey, error) {
+	return s.group.GenerateKeyPair(rand)
+}
+
+func (s dhkemScheme) Marshal(pk KEMPublicKey) []byte {
+	return s.group.Marshal(pk)
+}
+
+func (s dhkemScheme) Unmarshal(enc []byte) (KEMPublicKey, error) {
+	return s.group.Unmarshal(enc)
 }
 
 func (s dhkemScheme) Encap(rand io.Reader, pkR KEMPublicKey) ([]byte, []byte, error) {
-	skE, pkE, err := s.group.Generate(rand)
+	skE, pkE, err := s.group.GenerateKeyPair(rand)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	zz, err := s.group.Derive(skE, pkR)
+	zz, err := s.group.DH(skE, pkR)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	return zz, pkE.Bytes(), nil
+	return zz, s.group.Marshal(pkE), nil
 }
 
 func (s dhkemScheme) Decap(enc []byte, skR KEMPrivateKey) ([]byte, error) {
-	pkE, err := s.group.ParsePublicKey(enc)
+	pkE, err := s.group.Unmarshal(enc)
 	if err != nil {
 		return nil, err
 	}
 
-	zz, err := s.group.Derive(skR, pkE)
+	zz, err := s.group.DH(skR, pkE)
 	if err != nil {
 		return nil, err
 	}
@@ -59,37 +74,37 @@ func (s dhkemScheme) Decap(enc []byte, skR KEMPrivateKey) ([]byte, error) {
 
 func (s dhkemScheme) AuthEncap(rand io.Reader, pkR KEMPublicKey, skI KEMPrivateKey) ([]byte, []byte, error) {
 
-	skE, pkE, err := s.group.Generate(rand)
+	skE, pkE, err := s.group.GenerateKeyPair(rand)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	zzER, err := s.group.Derive(skE, pkR)
+	zzER, err := s.group.DH(skE, pkR)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	zzIR, err := s.group.Derive(skI, pkR)
+	zzIR, err := s.group.DH(skI, pkR)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	zz := append(zzER, zzIR...)
-	return zz, pkE.Bytes(), nil
+	return zz, s.group.Marshal(pkE), nil
 }
 
 func (s dhkemScheme) AuthDecap(enc []byte, skR KEMPrivateKey, pkI KEMPublicKey) ([]byte, error) {
-	pkE, err := s.group.ParsePublicKey(enc)
+	pkE, err := s.group.Unmarshal(enc)
 	if err != nil {
 		return nil, err
 	}
 
-	zzER, err := s.group.Derive(skR, pkE)
+	zzER, err := s.group.DH(skR, pkE)
 	if err != nil {
 		return nil, err
 	}
 
-	zzIR, err := s.group.Derive(skR, pkI)
+	zzIR, err := s.group.DH(skR, pkI)
 	if err != nil {
 		return nil, err
 	}
@@ -116,24 +131,11 @@ type ecdhPublicKey struct {
 	x, y  *big.Int
 }
 
-func (pub ecdhPublicKey) Bytes() []byte {
-	return elliptic.Marshal(pub.curve, pub.x, pub.y)
-}
-
 type ecdhScheme struct {
 	curve elliptic.Curve
 }
 
-func (s ecdhScheme) ParsePublicKey(enc []byte) (KEMPublicKey, error) {
-	x, y := elliptic.Unmarshal(s.curve, enc)
-	if x == nil {
-		return nil, fmt.Errorf("Error unmarshaling public key")
-	}
-
-	return &ecdhPublicKey{s.curve, x, y}, nil
-}
-
-func (s ecdhScheme) Generate(rand io.Reader) (KEMPrivateKey, KEMPublicKey, error) {
+func (s ecdhScheme) GenerateKeyPair(rand io.Reader) (KEMPrivateKey, KEMPublicKey, error) {
 	d, x, y, err := elliptic.GenerateKey(s.curve, rand)
 	if err != nil {
 		return nil, nil, err
@@ -143,7 +145,21 @@ func (s ecdhScheme) Generate(rand io.Reader) (KEMPrivateKey, KEMPublicKey, error
 	return priv, priv.PublicKey(), nil
 }
 
-func (s ecdhScheme) Derive(priv KEMPrivateKey, pub KEMPublicKey) ([]byte, error) {
+func (s ecdhScheme) Marshal(pk KEMPublicKey) []byte {
+	raw := pk.(*ecdhPublicKey)
+	return elliptic.Marshal(raw.curve, raw.x, raw.y)
+}
+
+func (s ecdhScheme) Unmarshal(enc []byte) (KEMPublicKey, error) {
+	x, y := elliptic.Unmarshal(s.curve, enc)
+	if x == nil {
+		return nil, fmt.Errorf("Error unmarshaling public key")
+	}
+
+	return &ecdhPublicKey{s.curve, x, y}, nil
+}
+
+func (s ecdhScheme) DH(priv KEMPrivateKey, pub KEMPublicKey) ([]byte, error) {
 	ecdhPriv, ok := priv.(*ecdhPrivateKey)
 	if !ok {
 		return nil, fmt.Errorf("Private key not suitable for ECDH")
@@ -181,23 +197,9 @@ type x25519PublicKey struct {
 	val [32]byte
 }
 
-func (pub x25519PublicKey) Bytes() []byte {
-	return pub.val[:]
-}
-
 type x25519Scheme struct{}
 
-func (s x25519Scheme) ParsePublicKey(enc []byte) (KEMPublicKey, error) {
-	if len(enc) != 32 {
-		return nil, fmt.Errorf("Error unmarshaling X25519 public key")
-	}
-
-	pub := &x25519PublicKey{}
-	copy(pub.val[:], enc)
-	return pub, nil
-}
-
-func (s x25519Scheme) Generate(rand io.Reader) (KEMPrivateKey, KEMPublicKey, error) {
+func (s x25519Scheme) GenerateKeyPair(rand io.Reader) (KEMPrivateKey, KEMPublicKey, error) {
 	priv := &x25519PrivateKey{}
 	_, err := rand.Read(priv.val[:])
 	if err != nil {
@@ -207,7 +209,22 @@ func (s x25519Scheme) Generate(rand io.Reader) (KEMPrivateKey, KEMPublicKey, err
 	return priv, priv.PublicKey(), nil
 }
 
-func (s x25519Scheme) Derive(priv KEMPrivateKey, pub KEMPublicKey) ([]byte, error) {
+func (s x25519Scheme) Marshal(pk KEMPublicKey) []byte {
+	raw := pk.(*x25519PublicKey)
+	return raw.val[:]
+}
+
+func (s x25519Scheme) Unmarshal(enc []byte) (KEMPublicKey, error) {
+	if len(enc) != 32 {
+		return nil, fmt.Errorf("Error unmarshaling X25519 public key")
+	}
+
+	pub := &x25519PublicKey{}
+	copy(pub.val[:], enc)
+	return pub, nil
+}
+
+func (s x25519Scheme) DH(priv KEMPrivateKey, pub KEMPublicKey) ([]byte, error) {
 	xPriv, ok := priv.(*x25519PrivateKey)
 	if !ok {
 		return nil, fmt.Errorf("Private key not suitable for X25519: %+v", priv)
@@ -241,23 +258,9 @@ type x448PublicKey struct {
 	val [56]byte
 }
 
-func (pub x448PublicKey) Bytes() []byte {
-	return pub.val[:]
-}
-
 type x448Scheme struct{}
 
-func (s x448Scheme) ParsePublicKey(enc []byte) (KEMPublicKey, error) {
-	if len(enc) != 56 {
-		return nil, fmt.Errorf("Error unmarshaling X448 public key")
-	}
-
-	pub := &x448PublicKey{}
-	copy(pub.val[:], enc)
-	return pub, nil
-}
-
-func (s x448Scheme) Generate(rand io.Reader) (KEMPrivateKey, KEMPublicKey, error) {
+func (s x448Scheme) GenerateKeyPair(rand io.Reader) (KEMPrivateKey, KEMPublicKey, error) {
 	priv := &x448PrivateKey{}
 	_, err := rand.Read(priv.val[:])
 	if err != nil {
@@ -267,7 +270,22 @@ func (s x448Scheme) Generate(rand io.Reader) (KEMPrivateKey, KEMPublicKey, error
 	return priv, priv.PublicKey(), nil
 }
 
-func (s x448Scheme) Derive(priv KEMPrivateKey, pub KEMPublicKey) ([]byte, error) {
+func (s x448Scheme) Marshal(pk KEMPublicKey) []byte {
+	raw := pk.(*x448PublicKey)
+	return raw.val[:]
+}
+
+func (s x448Scheme) Unmarshal(enc []byte) (KEMPublicKey, error) {
+	if len(enc) != 56 {
+		return nil, fmt.Errorf("Error unmarshaling X448 public key")
+	}
+
+	pub := &x448PublicKey{}
+	copy(pub.val[:], enc)
+	return pub, nil
+}
+
+func (s x448Scheme) DH(priv KEMPrivateKey, pub KEMPublicKey) ([]byte, error) {
 	xPriv, ok := priv.(*x448PrivateKey)
 	if !ok {
 		return nil, fmt.Errorf("Private key not suitable for X448: %+v", priv)

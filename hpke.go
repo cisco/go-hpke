@@ -16,22 +16,22 @@ type KEMPrivateKey interface {
 	PublicKey() KEMPublicKey
 }
 
-type KEMPublicKey interface {
-	Bytes() []byte
-}
+type KEMPublicKey interface{}
 
 type KEMScheme interface {
-	Generate(rand io.Reader) (KEMPrivateKey, KEMPublicKey, error)
+	GenerateKeyPair(rand io.Reader) (KEMPrivateKey, KEMPublicKey, error)
+	Marshal(pk KEMPublicKey) []byte
+	Unmarshal(enc []byte) (KEMPublicKey, error)
 	Encap(rand io.Reader, pkR KEMPublicKey) ([]byte, []byte, error)
 	Decap(enc []byte, skR KEMPrivateKey) ([]byte, error)
 	AuthEncap(rand io.Reader, pkR KEMPublicKey, skI KEMPrivateKey) ([]byte, []byte, error)
 	AuthDecap(enc []byte, skR KEMPrivateKey, pkI KEMPublicKey) ([]byte, error)
 }
 
-type DHScheme interface {
-	ParsePublicKey(enc []byte) (KEMPublicKey, error)
-	Generate(rand io.Reader) (KEMPrivateKey, KEMPublicKey, error)
-	Derive(priv KEMPrivateKey, pub KEMPublicKey) ([]byte, error)
+type KDFScheme interface {
+	Extract(salt, ikm []byte) []byte
+	Expand(prk, info []byte, L int) []byte
+	OutputSize() int
 }
 
 type AEADScheme interface {
@@ -40,18 +40,20 @@ type AEADScheme interface {
 	NonceSize() int
 }
 
-type KDFScheme interface {
-	Extract(salt, ikm []byte) []byte
-	Expand(prk, info []byte, outLen int) []byte
-	OutputSize() int
-}
-
 type CipherSuite struct {
 	ID   uint16
 	KEM  KEMScheme
 	KDF  KDFScheme
 	AEAD AEADScheme
 }
+
+type HPKEMode byte
+
+const (
+	modeBase HPKEMode = 0x00
+	modePSK  HPKEMode = 0x01
+	modeAuth HPKEMode = 0x02
+)
 
 func logString(val string) {
 	if debug {
@@ -68,19 +70,23 @@ func logVal(name string, value []byte) {
 ///////
 // Core
 
-func setupCore(suite CipherSuite, secret, kemContext, info []byte) (keyIR, nonceIR []byte) {
-	// context = ciphersuite || kemContext || info
-	context := []byte{byte(suite.ID) >> 8, byte(suite.ID)}
+func setupCore(suite CipherSuite, mode HPKEMode, secret, kemContext, info []byte) (key, nonce []byte) {
+	// context = ciphersuite + mode +
+	//					 len(kemContext) + kemContext +
+	//					 len(info) + info
+	context := []byte{byte(suite.ID) >> 8, byte(suite.ID), byte(mode)}
+	context = append(context, byte(len(kemContext)))
 	context = append(context, kemContext...)
+	context = append(context, byte(len(info)))
 	context = append(context, info...)
 
-	// keyIR = Expand(secret, "hpke key" || context, Nk)
+	// key = Expand(secret, "hpke key" || context, Nk)
 	keyContext := append([]byte("hpke key"), context...)
-	keyIR = suite.KDF.Expand(secret, keyContext, suite.AEAD.KeySize())
+	key = suite.KDF.Expand(secret, keyContext, suite.AEAD.KeySize())
 
-	// nonceIR = Expand(secret, "hpke nonce" || context, Nn)
+	// nonce = Expand(secret, "hpke nonce" || context, Nn)
 	nonceContext := append([]byte("hpke nonce"), context...)
-	nonceIR = suite.KDF.Expand(secret, nonceContext, suite.AEAD.NonceSize())
+	nonce = suite.KDF.Expand(secret, nonceContext, suite.AEAD.NonceSize())
 	return
 }
 
@@ -153,114 +159,114 @@ func (ctx *DecryptContext) Open(aad, ct []byte) ([]byte, error) {
 ///////
 // Base
 
-func setupBaseCore(suite CipherSuite, pkR KEMPublicKey, zz, enc, info []byte) (keyIR, nonceIR []byte) {
-	// kemContext = enc || pkR
-	kemContext := append(enc, pkR.Bytes()...)
+func setupBase(suite CipherSuite, pkR KEMPublicKey, zz, enc, info []byte) (key, nonce []byte) {
+	// kemContext = enc + pkR
+	kemContext := append(enc, suite.KEM.Marshal(pkR)...)
 
-	// secret = Extract(0^Nh, zz)
+	// secret = Extract(0*Nh, zz)
 	zero := bytes.Repeat([]byte{0}, suite.KDF.OutputSize())
 	secret := suite.KDF.Extract(zero, zz)
 
-	keyIR, nonceIR = setupCore(suite, secret, kemContext, info)
+	key, nonce = setupCore(suite, modeBase, secret, kemContext, info)
 	return
 }
 
-func SetupIBase(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, info []byte) ([]byte, *EncryptContext, error) {
+func SetupBaseI(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, info []byte) ([]byte, *EncryptContext, error) {
 	// zz, enc = Encap(pkR)
 	zz, enc, err := suite.KEM.Encap(rand, pkR)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	keyIR, nonceIR := setupBaseCore(suite, pkR, zz, enc, info)
-	ctx, err := newEncContext(suite, keyIR, nonceIR)
+	key, nonce := setupBase(suite, pkR, zz, enc, info)
+	ctx, err := newEncContext(suite, key, nonce)
 	return enc, ctx, err
 }
 
-func SetupRBase(suite CipherSuite, skR KEMPrivateKey, enc, info []byte) (*DecryptContext, error) {
+func SetupBaseR(suite CipherSuite, skR KEMPrivateKey, enc, info []byte) (*DecryptContext, error) {
 	// zz = Decap(enc, skR)
 	zz, err := suite.KEM.Decap(enc, skR)
 	if err != nil {
 		return nil, err
 	}
 
-	keyIR, nonceIR := setupBaseCore(suite, skR.PublicKey(), zz, enc, info)
-	return newDecContext(suite, keyIR, nonceIR)
+	key, nonce := setupBase(suite, skR.PublicKey(), zz, enc, info)
+	return newDecContext(suite, key, nonce)
 }
 
 //////
 // PSK
 
-func setupPSKCore(suite CipherSuite, pkR KEMPublicKey, zz, enc, psk, pskID, info []byte) (keyIR, nonceIR []byte) {
-	// kemContext = enc || pkR || pskID
-	kemContext := append(enc, pkR.Bytes()...)
+func setupPSK(suite CipherSuite, pkR KEMPublicKey, zz, enc, psk, pskID, info []byte) (key, nonce []byte) {
+	// kemContext = enc + pkR + pskID
+	kemContext := append(enc, suite.KEM.Marshal(pkR)...)
 	kemContext = append(kemContext, pskID...)
 
 	// secret = Extract(psk, zz)
 	secret := suite.KDF.Extract(psk, zz)
 
-	keyIR, nonceIR = setupCore(suite, secret, kemContext, info)
+	key, nonce = setupCore(suite, modePSK, secret, kemContext, info)
 	return
 }
 
-func SetupIPSK(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, psk, pskID, info []byte) ([]byte, *EncryptContext, error) {
+func SetupPSKI(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, psk, pskID, info []byte) ([]byte, *EncryptContext, error) {
 	// zz, enc = Encap(pkR)
 	zz, enc, err := suite.KEM.Encap(rand, pkR)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	keyIR, nonceIR := setupPSKCore(suite, pkR, zz, enc, psk, pskID, info)
-	ctx, err := newEncContext(suite, keyIR, nonceIR)
+	key, nonce := setupPSK(suite, pkR, zz, enc, psk, pskID, info)
+	ctx, err := newEncContext(suite, key, nonce)
 	return enc, ctx, err
 }
 
-func SetupRPSK(suite CipherSuite, skR KEMPrivateKey, enc, psk, pskID, info []byte) (*DecryptContext, error) {
+func SetupPSKR(suite CipherSuite, skR KEMPrivateKey, enc, psk, pskID, info []byte) (*DecryptContext, error) {
 	// zz = Decap(enc, skR)
 	zz, err := suite.KEM.Decap(enc, skR)
 	if err != nil {
 		return nil, err
 	}
 
-	keyIR, nonceIR := setupPSKCore(suite, skR.PublicKey(), zz, enc, psk, pskID, info)
-	return newDecContext(suite, keyIR, nonceIR)
+	key, nonce := setupPSK(suite, skR.PublicKey(), zz, enc, psk, pskID, info)
+	return newDecContext(suite, key, nonce)
 }
 
 ///////
 // Auth
 
-func setupAuthCore(suite CipherSuite, pkR, pkI KEMPublicKey, zz, enc, info []byte) (keyIR, nonceIR []byte) {
-	// kemContext = enc || pkR || pkI
-	kemContext := append(enc, pkR.Bytes()...)
-	kemContext = append(kemContext, pkI.Bytes()...)
+func setupAuth(suite CipherSuite, pkR, pkI KEMPublicKey, zz, enc, info []byte) (key, nonce []byte) {
+	// kemContext = enc + pkR + pkI
+	kemContext := append(enc, suite.KEM.Marshal(pkR)...)
+	kemContext = append(kemContext, suite.KEM.Marshal(pkI)...)
 
-	// secret = Extract(psk, zz)
+	// secret = Extract(0*Nh, zz)
 	zero := bytes.Repeat([]byte{0}, suite.KDF.OutputSize())
 	secret := suite.KDF.Extract(zero, zz)
 
-	keyIR, nonceIR = setupCore(suite, secret, kemContext, info)
+	key, nonce = setupCore(suite, modeAuth, secret, kemContext, info)
 	return
 }
 
-func SetupIAuth(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, skI KEMPrivateKey, info []byte) ([]byte, *EncryptContext, error) {
+func SetupAuthI(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, skI KEMPrivateKey, info []byte) ([]byte, *EncryptContext, error) {
 	// zz, enc = AuthEncap(pkR, skI)
 	zz, enc, err := suite.KEM.AuthEncap(rand, pkR, skI)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	keyIR, nonceIR := setupAuthCore(suite, pkR, skI.PublicKey(), zz, enc, info)
-	ctx, err := newEncContext(suite, keyIR, nonceIR)
+	key, nonce := setupAuth(suite, pkR, skI.PublicKey(), zz, enc, info)
+	ctx, err := newEncContext(suite, key, nonce)
 	return enc, ctx, err
 }
 
-func SetupRAuth(suite CipherSuite, skR KEMPrivateKey, pkI KEMPublicKey, enc, info []byte) (*DecryptContext, error) {
+func SetupAuthR(suite CipherSuite, skR KEMPrivateKey, pkI KEMPublicKey, enc, info []byte) (*DecryptContext, error) {
 	// zz = AuthDecap(enc, skR, pkI)
 	zz, err := suite.KEM.AuthDecap(enc, skR, pkI)
 	if err != nil {
 		return nil, err
 	}
 
-	keyIR, nonceIR := setupAuthCore(suite, skR.PublicKey(), pkI, zz, enc, info)
-	return newDecContext(suite, keyIR, nonceIR)
+	key, nonce := setupAuth(suite, skR.PublicKey(), pkI, zz, enc, info)
+	return newDecContext(suite, key, nonce)
 }
