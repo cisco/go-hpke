@@ -96,3 +96,29 @@ func TestAuth(t *testing.T) {
 		roundTrip(t, id, ctxI, ctxR)
 	}
 }
+
+func TestPSKAuth(t *testing.T) {
+	for id, suite := range ciphersuites {
+		skI, pkI, err := suite.KEM.GenerateKeyPair(rand.Reader)
+		if err != nil {
+			t.Fatalf("[%d] Error generating initiator DH key pair: %s", id, err)
+		}
+
+		skR, pkR, err := suite.KEM.GenerateKeyPair(rand.Reader)
+		if err != nil {
+			t.Fatalf("[%d] Error generating responder DH key pair: %s", id, err)
+		}
+
+		enc, ctxI, err := SetupPSKAuthI(suite, rand.Reader, pkR, skI, psk, pskID, info)
+		if err != nil {
+			t.Fatalf("[%d] Error in SetupPSKAuthI: %s", id, err)
+		}
+
+		ctxR, err := SetupPSKAuthR(suite, skR, pkI, enc, psk, pskID, info)
+		if err != nil {
+			t.Fatalf("[%d] Error in SetupBaseI: %s", id, err)
+		}
+
+		roundTrip(t, id, ctxI, ctxR)
+	}
+}

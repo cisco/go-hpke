@@ -26,6 +26,7 @@ type dhScheme interface {
 	Marshal(pk KEMPublicKey) []byte
 	Unmarshal(enc []byte) (KEMPublicKey, error)
 	DH(priv KEMPrivateKey, pub KEMPublicKey) ([]byte, error)
+	PublicKeySize() int
 }
 
 type dhkemScheme struct {
@@ -113,6 +114,10 @@ func (s dhkemScheme) AuthDecap(enc []byte, skR KEMPrivateKey, pkI KEMPublicKey) 
 	return zz, nil
 }
 
+func (s dhkemScheme) PublicKeySize() int {
+	return s.group.PublicKeySize()
+}
+
 ////////////////////////
 // ECDH with NIST curves
 
@@ -180,6 +185,11 @@ func (s ecdhScheme) DH(priv KEMPrivateKey, pub KEMPublicKey) ([]byte, error) {
 	return zz, nil
 }
 
+func (s ecdhScheme) PublicKeySize() int {
+	feSize := (s.curve.Params().BitSize + 7) >> 3
+	return 1 + 2*feSize
+}
+
 ///////////////////
 // ECDH with X25519
 
@@ -241,6 +251,10 @@ func (s x25519Scheme) DH(priv KEMPrivateKey, pub KEMPublicKey) ([]byte, error) {
 	return zz[:], nil
 }
 
+func (s x25519Scheme) PublicKeySize() int {
+	return 32
+}
+
 ///////////////////
 // ECDH with X448
 
@@ -300,6 +314,10 @@ func (s x448Scheme) DH(priv KEMPrivateKey, pub KEMPublicKey) ([]byte, error) {
 	var zz [56]byte
 	x448.ScalarMult(&zz, &xPriv.val, &xPub.val)
 	return zz[:], nil
+}
+
+func (s x448Scheme) PublicKeySize() int {
+	return 56
 }
 
 //////////
