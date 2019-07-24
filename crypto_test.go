@@ -5,6 +5,8 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"testing"
+
+	"github.com/cloudflare/circl/dh/sidh"
 )
 
 func randomBytes(size int) []byte {
@@ -19,6 +21,7 @@ func TestKEMSchemes(t *testing.T) {
 		dhkemScheme{ecdhScheme{curve: elliptic.P521()}},
 		dhkemScheme{x25519Scheme{}},
 		dhkemScheme{x448Scheme{}},
+		sikeScheme{sidh.Fp503},
 	}
 
 	for i, s := range schemes {

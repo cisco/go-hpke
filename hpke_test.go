@@ -73,6 +73,10 @@ func TestPSK(t *testing.T) {
 
 func TestAuth(t *testing.T) {
 	for id, suite := range ciphersuites {
+		if _, ok := suite.KEM.(AuthKEMScheme); !ok {
+			continue
+		}
+
 		skI, pkI, err := suite.KEM.GenerateKeyPair(rand.Reader)
 		if err != nil {
 			t.Fatalf("[%d] Error generating initiator DH key pair: %s", id, err)
@@ -99,6 +103,10 @@ func TestAuth(t *testing.T) {
 
 func TestPSKAuth(t *testing.T) {
 	for id, suite := range ciphersuites {
+		if _, ok := suite.KEM.(AuthKEMScheme); !ok {
+			continue
+		}
+
 		skI, pkI, err := suite.KEM.GenerateKeyPair(rand.Reader)
 		if err != nil {
 			t.Fatalf("[%d] Error generating initiator DH key pair: %s", id, err)
