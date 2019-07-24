@@ -343,3 +343,40 @@ func SetupAuthR(suite CipherSuite, skR KEMPrivateKey, pkI KEMPublicKey, enc, inf
 
 	return newDecContext(suite, key, nonce)
 }
+
+/////////////
+// PSK + Auth
+
+func SetupPSKAuthI(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, skI KEMPrivateKey, psk, pskID, info []byte) ([]byte, *EncryptContext, error) {
+	// zz, enc = AuthEncap(pkR, skI)
+	zz, enc, err := suite.KEM.AuthEncap(rand, pkR, skI)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	pkIm := suite.KEM.Marshal(skI.PublicKey())
+	key, nonce, err := encryptionContext(suite, modePSKAuth, pkR, zz, enc, info, psk, pskID, pkIm)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	ctx, err := newEncContext(suite, key, nonce)
+	return enc, ctx, err
+}
+
+func SetupPSKAuthR(suite CipherSuite, skR KEMPrivateKey, pkI KEMPublicKey, enc, psk, pskID, info []byte) (*DecryptContext, error) {
+	// zz = AuthDecap(enc, skR, pkI)
+	zz, err := suite.KEM.AuthDecap(enc, skR, pkI)
+	if err != nil {
+		return nil, err
+	}
+
+	pkIm := suite.KEM.Marshal(pkI)
+	pkR := skR.PublicKey()
+	key, nonce, err := encryptionContext(suite, modePSKAuth, pkR, zz, enc, info, psk, pskID, pkIm)
+	if err != nil {
+		return nil, err
+	}
+
+	return newDecContext(suite, key, nonce)
+}
