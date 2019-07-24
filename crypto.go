@@ -14,6 +14,7 @@ import (
 	_ "crypto/sha512"
 
 	"git.schwanenlied.me/yawning/x448.git"
+	"github.com/cloudflare/circl/dh/sidh"
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/curve25519"
 )
@@ -310,7 +311,6 @@ func (s x448Scheme) DH(priv KEMPrivateKey, pub KEMPublicKey) ([]byte, error) {
 		return nil, fmt.Errorf("Public key not suitable for X448: %+v", pub)
 	}
 
-	// TODO ScalarMult
 	var zz [56]byte
 	x448.ScalarMult(&zz, &xPriv.val, &xPub.val)
 	return zz[:], nil
@@ -318,6 +318,119 @@ func (s x448Scheme) DH(priv KEMPrivateKey, pub KEMPublicKey) ([]byte, error) {
 
 func (s x448Scheme) PublicKeySize() int {
 	return 56
+}
+
+///////
+// SIKE
+
+type sikePublicKey struct {
+	field uint8
+	pub   *sidh.PublicKey
+}
+
+type sikePrivateKey struct {
+	field uint8
+	priv  *sidh.PrivateKey
+	pub   *sidh.PublicKey
+}
+
+func (priv sikePrivateKey) PublicKey() KEMPublicKey {
+	return &sikePublicKey{priv.field, priv.pub}
+}
+
+type sikeScheme struct {
+	field uint8
+}
+
+func (s sikeScheme) GenerateKeyPair(rand io.Reader) (KEMPrivateKey, KEMPublicKey, error) {
+	rawPriv := sidh.NewPrivateKey(s.field, sidh.KeyVariantSike)
+	err := rawPriv.Generate(rand)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	rawPub := sidh.NewPublicKey(s.field, sidh.KeyVariantSike)
+	rawPriv.GeneratePublicKey(rawPub)
+
+	priv := &sikePrivateKey{s.field, rawPriv, rawPub}
+	return priv, priv.PublicKey(), nil
+}
+
+func (s sikeScheme) Marshal(pk KEMPublicKey) []byte {
+	raw := pk.(*sikePublicKey)
+	out := make([]byte, raw.pub.Size())
+	raw.pub.Export(out)
+	return out
+}
+
+func (s sikeScheme) Unmarshal(enc []byte) (KEMPublicKey, error) {
+	rawPub := sidh.NewPublicKey(s.field, sidh.KeyVariantSike)
+	if len(enc) != rawPub.Size() {
+		return nil, fmt.Errorf("Invalid public key size")
+	}
+
+	err := rawPub.Import(enc)
+	if err != nil {
+		return nil, err
+	}
+
+	return &sikePublicKey{s.field, rawPub}, nil
+}
+
+func (s sikeScheme) newKEM(rand io.Reader) (*sidh.KEM, error) {
+	switch s.field {
+	case sidh.Fp503:
+		return sidh.NewSike503(rand), nil
+	case sidh.Fp751:
+		return sidh.NewSike751(rand), nil
+	}
+	return nil, fmt.Errorf("Invalid field")
+}
+
+func (s sikeScheme) Encap(rand io.Reader, pkR KEMPublicKey) ([]byte, []byte, error) {
+	raw := pkR.(*sikePublicKey)
+
+	kem, err := s.newKEM(rand)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	enc := make([]byte, kem.CiphertextSize())
+	zz := make([]byte, kem.SharedSecretSize())
+	err = kem.Encapsulate(enc, zz, raw.pub)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return zz, enc, nil
+}
+
+type panicReader struct{}
+
+func (p panicReader) Read(unused []byte) (int, error) {
+	panic("Should not read")
+}
+
+func (s sikeScheme) Decap(enc []byte, skR KEMPrivateKey) ([]byte, error) {
+	raw := skR.(*sikePrivateKey)
+
+	kem, err := s.newKEM(panicReader{})
+	if err != nil {
+		return nil, err
+	}
+
+	zz := make([]byte, kem.SharedSecretSize())
+	err = kem.Decapsulate(zz, raw.priv, raw.pub, enc)
+	if err != nil {
+		return nil, err
+	}
+
+	return zz, nil
+}
+
+func (s sikeScheme) PublicKeySize() int {
+	rawPub := sidh.NewPublicKey(s.field, sidh.KeyVariantSike)
+	return rawPub.Size()
 }
 
 //////////
@@ -419,6 +532,8 @@ const (
 	P256_HKDF_SHA256_CHACHA20POLY1305   uint16 = 0x06
 	P521_HKDF_SHA512_AESGCM256          uint16 = 0x07
 	P521_HKDF_SHA512_CHACHA20POLY1305   uint16 = 0x08
+	SIKE503_HKDF_SHA256_AESGCM128       uint16 = 0xff
+	SIKE751_HKDF_SHA512_AESGCM256       uint16 = 0xfe
 )
 
 var ciphersuites = map[uint16]CipherSuite{
@@ -476,6 +591,20 @@ var ciphersuites = map[uint16]CipherSuite{
 		KEM:  dhkemScheme{ecdhScheme{curve: elliptic.P521()}},
 		KDF:  hkdfScheme{hash: crypto.SHA512},
 		AEAD: chachaPolyScheme{},
+	},
+
+	SIKE503_HKDF_SHA256_AESGCM128: {
+		ID:   SIKE503_HKDF_SHA256_AESGCM128,
+		KEM:  sikeScheme{sidh.Fp503},
+		KDF:  hkdfScheme{hash: crypto.SHA256},
+		AEAD: aesgcmScheme{keySize: 16},
+	},
+
+	SIKE751_HKDF_SHA512_AESGCM256: {
+		ID:   SIKE751_HKDF_SHA512_AESGCM256,
+		KEM:  sikeScheme{sidh.Fp751},
+		KDF:  hkdfScheme{hash: crypto.SHA512},
+		AEAD: aesgcmScheme{keySize: 32},
 	},
 }
 

@@ -27,9 +27,13 @@ type KEMScheme interface {
 	Unmarshal(enc []byte) (KEMPublicKey, error)
 	Encap(rand io.Reader, pkR KEMPublicKey) ([]byte, []byte, error)
 	Decap(enc []byte, skR KEMPrivateKey) ([]byte, error)
+	PublicKeySize() int
+}
+
+type AuthKEMScheme interface {
+	KEMScheme
 	AuthEncap(rand io.Reader, pkR KEMPublicKey, skI KEMPrivateKey) ([]byte, []byte, error)
 	AuthDecap(enc []byte, skR KEMPrivateKey, pkI KEMPublicKey) ([]byte, error)
-	PublicKeySize() int
 }
 
 type KDFScheme interface {
@@ -74,22 +78,6 @@ func logVal(name string, value []byte) {
 
 ///////
 // Core
-
-/*
-
-def EncryptionContext(mode, pkRm, zz, enc, info, psk, pskID, pkIm):
-  VerifyMode(mode, psk, pskID, pkI)
-
-  pkRm = Marshal(pkR)
-  context = concat(mode, ciphersuite, enc, pkRm, pkIm,
-                   len(pskID), pskID, len(info), info)
-
-  secret = Extract(psk, zz)
-  key = Expand(secret, concat("hpke key", context), Nk)
-  nonce = Expand(secret, concat("hpke nonce", context), Nn)
-  return Context(key, nonce)
-
-*/
 
 func defaultPKIm(suite CipherSuite) []byte {
 	return bytes.Repeat([]byte{0x00}, suite.KEM.PublicKeySize())
@@ -312,7 +300,8 @@ func SetupPSKR(suite CipherSuite, skR KEMPrivateKey, enc, psk, pskID, info []byt
 
 func SetupAuthI(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, skI KEMPrivateKey, info []byte) ([]byte, *EncryptContext, error) {
 	// zz, enc = AuthEncap(pkR, skI)
-	zz, enc, err := suite.KEM.AuthEncap(rand, pkR, skI)
+	auth := suite.KEM.(AuthKEMScheme)
+	zz, enc, err := auth.AuthEncap(rand, pkR, skI)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -329,7 +318,8 @@ func SetupAuthI(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, skI KEMPriv
 
 func SetupAuthR(suite CipherSuite, skR KEMPrivateKey, pkI KEMPublicKey, enc, info []byte) (*DecryptContext, error) {
 	// zz = AuthDecap(enc, skR, pkI)
-	zz, err := suite.KEM.AuthDecap(enc, skR, pkI)
+	auth := suite.KEM.(AuthKEMScheme)
+	zz, err := auth.AuthDecap(enc, skR, pkI)
 	if err != nil {
 		return nil, err
 	}
@@ -349,7 +339,8 @@ func SetupAuthR(suite CipherSuite, skR KEMPrivateKey, pkI KEMPublicKey, enc, inf
 
 func SetupPSKAuthI(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, skI KEMPrivateKey, psk, pskID, info []byte) ([]byte, *EncryptContext, error) {
 	// zz, enc = AuthEncap(pkR, skI)
-	zz, enc, err := suite.KEM.AuthEncap(rand, pkR, skI)
+	auth := suite.KEM.(AuthKEMScheme)
+	zz, enc, err := auth.AuthEncap(rand, pkR, skI)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -366,7 +357,8 @@ func SetupPSKAuthI(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, skI KEMP
 
 func SetupPSKAuthR(suite CipherSuite, skR KEMPrivateKey, pkI KEMPublicKey, enc, psk, pskID, info []byte) (*DecryptContext, error) {
 	// zz = AuthDecap(enc, skR, pkI)
-	zz, err := suite.KEM.AuthDecap(enc, skR, pkI)
+	auth := suite.KEM.(AuthKEMScheme)
+	zz, err := auth.AuthDecap(enc, skR, pkI)
 	if err != nil {
 		return nil, err
 	}
