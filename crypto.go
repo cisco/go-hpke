@@ -521,98 +521,74 @@ func (s hkdfScheme) OutputSize() int {
 }
 
 ///////////////////////////
-// Pre-defined ciphersuites
+// Pre-defined KEM identifiers
 
 const (
-	X25519_HKDF_SHA256_AESGCM128        uint16 = 0x01
-	X25519_HKDF_SHA256_CHACHA20POLY1305 uint16 = 0x02
-	X448_HKDF_SHA512_AESGCM256          uint16 = 0x03
-	X448_HKDF_SHA512_CHACHA20POLY1305   uint16 = 0x04
-	P256_HKDF_SHA256_AESGCM128          uint16 = 0x05
-	P256_HKDF_SHA256_CHACHA20POLY1305   uint16 = 0x06
-	P521_HKDF_SHA512_AESGCM256          uint16 = 0x07
-	P521_HKDF_SHA512_CHACHA20POLY1305   uint16 = 0x08
-	SIKE503_HKDF_SHA256_AESGCM128       uint16 = 0xff
-	SIKE751_HKDF_SHA512_AESGCM256       uint16 = 0xfe
+	DHKEM_X25519  uint16 = 0x0001
+	DHKEM_X448    uint16 = 0x0002
+	DHKEM_P256    uint16 = 0x0003
+	DHKEM_P521    uint16 = 0x0004
+	DHKEM_SIKE503 uint16 = 0xFFFE
+	DHKEM_SIKE751 uint16 = 0xFFFF
 )
 
-var ciphersuites = map[uint16]CipherSuite{
-	X25519_HKDF_SHA256_AESGCM128: {
-		ID:   X25519_HKDF_SHA256_AESGCM128,
-		KEM:  dhkemScheme{x25519Scheme{}},
-		KDF:  hkdfScheme{hash: crypto.SHA256},
-		AEAD: aesgcmScheme{keySize: 16},
-	},
-
-	X25519_HKDF_SHA256_CHACHA20POLY1305: {
-		ID:   X25519_HKDF_SHA256_CHACHA20POLY1305,
-		KEM:  dhkemScheme{x25519Scheme{}},
-		KDF:  hkdfScheme{hash: crypto.SHA256},
-		AEAD: chachaPolyScheme{},
-	},
-
-	X448_HKDF_SHA512_AESGCM256: {
-		ID:   X448_HKDF_SHA512_AESGCM256,
-		KEM:  dhkemScheme{x448Scheme{}},
-		KDF:  hkdfScheme{hash: crypto.SHA512},
-		AEAD: aesgcmScheme{keySize: 32},
-	},
-
-	X448_HKDF_SHA512_CHACHA20POLY1305: {
-		ID:   X448_HKDF_SHA512_CHACHA20POLY1305,
-		KEM:  dhkemScheme{x448Scheme{}},
-		KDF:  hkdfScheme{hash: crypto.SHA512},
-		AEAD: chachaPolyScheme{},
-	},
-
-	P256_HKDF_SHA256_AESGCM128: {
-		ID:   P256_HKDF_SHA256_AESGCM128,
-		KEM:  dhkemScheme{ecdhScheme{curve: elliptic.P256()}},
-		KDF:  hkdfScheme{hash: crypto.SHA256},
-		AEAD: aesgcmScheme{keySize: 16},
-	},
-
-	P256_HKDF_SHA256_CHACHA20POLY1305: {
-		ID:   P256_HKDF_SHA256_CHACHA20POLY1305,
-		KEM:  dhkemScheme{ecdhScheme{curve: elliptic.P256()}},
-		KDF:  hkdfScheme{hash: crypto.SHA256},
-		AEAD: chachaPolyScheme{},
-	},
-
-	P521_HKDF_SHA512_AESGCM256: {
-		ID:   P521_HKDF_SHA512_AESGCM256,
-		KEM:  dhkemScheme{ecdhScheme{curve: elliptic.P521()}},
-		KDF:  hkdfScheme{hash: crypto.SHA512},
-		AEAD: aesgcmScheme{keySize: 32},
-	},
-
-	P521_HKDF_SHA512_CHACHA20POLY1305: {
-		ID:   P521_HKDF_SHA512_CHACHA20POLY1305,
-		KEM:  dhkemScheme{ecdhScheme{curve: elliptic.P521()}},
-		KDF:  hkdfScheme{hash: crypto.SHA512},
-		AEAD: chachaPolyScheme{},
-	},
-
-	SIKE503_HKDF_SHA256_AESGCM128: {
-		ID:   SIKE503_HKDF_SHA256_AESGCM128,
-		KEM:  sikeScheme{sidh.Fp503},
-		KDF:  hkdfScheme{hash: crypto.SHA256},
-		AEAD: aesgcmScheme{keySize: 16},
-	},
-
-	SIKE751_HKDF_SHA512_AESGCM256: {
-		ID:   SIKE751_HKDF_SHA512_AESGCM256,
-		KEM:  sikeScheme{sidh.Fp751},
-		KDF:  hkdfScheme{hash: crypto.SHA512},
-		AEAD: aesgcmScheme{keySize: 32},
-	},
+var kems = map[uint16]KEMScheme{
+	DHKEM_X25519:  dhkemScheme{x25519Scheme{}},
+	DHKEM_X448:    dhkemScheme{x448Scheme{}},
+	DHKEM_P256:    dhkemScheme{ecdhScheme{curve: elliptic.P256()}},
+	DHKEM_P521:    dhkemScheme{ecdhScheme{curve: elliptic.P521()}},
+	DHKEM_SIKE503: sikeScheme{sidh.Fp503},
+	DHKEM_SIKE751: sikeScheme{sidh.Fp751},
 }
 
-func GetRegisteredCipherSuite(id uint16) (CipherSuite, error) {
-	suite, ok := ciphersuites[id]
+///////////////////////////
+// Pre-defined KDF identifiers
+
+const (
+	KDF_HKDF_SHA256 uint16 = 0x0001
+	KDF_HKDF_SHA512 uint16 = 0x0002
+)
+
+var kdfs = map[uint16]KDFScheme{
+	KDF_HKDF_SHA256: hkdfScheme{hash: crypto.SHA256},
+	KDF_HKDF_SHA512: hkdfScheme{hash: crypto.SHA512},
+}
+
+///////////////////////////
+// Pre-defined AEAD identifiers
+
+const (
+	AEAD_AESGCM128        uint16 = 0x0001
+	AEAD_AESGCM256        uint16 = 0x0002
+	AEAD_CHACHA20POLY1305 uint16 = 0x0003
+)
+
+var aeads = map[uint16]AEADScheme{
+	AEAD_AESGCM128:        aesgcmScheme{keySize: 16},
+	AEAD_AESGCM256:        aesgcmScheme{keySize: 32},
+	AEAD_CHACHA20POLY1305: chachaPolyScheme{},
+}
+
+func GetRegisteredCipherSuite(kemID, kdfID, aeadID uint16) (CipherSuite, error) {
+	kem, ok := kems[kemID]
 	if !ok {
-		return CipherSuite{}, fmt.Errorf("Unknown ciphersuite id")
+		return CipherSuite{}, fmt.Errorf("Unknown KEM id")
 	}
 
-	return suite, nil
+	kdf, ok := kdfs[kdfID]
+	if !ok {
+		return CipherSuite{}, fmt.Errorf("Unknown KDF id")
+	}
+
+	aead, ok := aeads[aeadID]
+	if !ok {
+		return CipherSuite{}, fmt.Errorf("Unknown AEAD id")
+	}
+
+	return CipherSuite{
+		ID:   0x0000,
+		KEM:  kem,
+		KDF:  kdf,
+		AEAD: aead,
+	}, nil
 }
