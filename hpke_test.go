@@ -15,7 +15,7 @@ var (
 	rtts     = 10
 )
 
-func roundTrip(t *testing.T, kemID, kdfID, aeadID uint16, enc *EncryptContext, dec *DecryptContext) {
+func roundTrip(t *testing.T, kemID KEMID, kdfID KDFID, aeadID AEADID, enc *EncryptContext, dec *DecryptContext) {
 	for range make([]struct{}, rtts) {
 		encrypted := enc.Seal(aad, original)
 		decrypted, err := dec.Open(aad, encrypted)
@@ -29,8 +29,8 @@ func roundTrip(t *testing.T, kemID, kdfID, aeadID uint16, enc *EncryptContext, d
 	}
 }
 
-func roundTripBase(t *testing.T, kemID, kdfID, aeadID uint16) {
-	suite, err := GetRegisteredCipherSuite(kemID, kdfID, aeadID)
+func roundTripBase(t *testing.T, kemID KEMID, kdfID KDFID, aeadID AEADID) {
+	suite, err := AssembleCipherSuite(kemID, kdfID, aeadID)
 	if err != nil {
 		t.Fatalf("[%x, %x, %x] Error looking up ciphersuite: %s", kemID, kdfID, aeadID, err)
 	}
@@ -53,8 +53,8 @@ func roundTripBase(t *testing.T, kemID, kdfID, aeadID uint16) {
 	roundTrip(t, kemID, kdfID, aeadID, ctxI, ctxR)
 }
 
-func roundTripPSK(t *testing.T, kemID, kdfID, aeadID uint16) {
-	suite, err := GetRegisteredCipherSuite(kemID, kdfID, aeadID)
+func roundTripPSK(t *testing.T, kemID KEMID, kdfID KDFID, aeadID AEADID) {
+	suite, err := AssembleCipherSuite(kemID, kdfID, aeadID)
 	if err != nil {
 		t.Fatalf("[%x, %x, %x] Error looking up ciphersuite: %s", kemID, kdfID, aeadID, err)
 	}
@@ -77,8 +77,8 @@ func roundTripPSK(t *testing.T, kemID, kdfID, aeadID uint16) {
 	roundTrip(t, kemID, kdfID, aeadID, ctxI, ctxR)
 }
 
-func roundTripAuth(t *testing.T, kemID, kdfID, aeadID uint16) {
-	suite, err := GetRegisteredCipherSuite(kemID, kdfID, aeadID)
+func roundTripAuth(t *testing.T, kemID KEMID, kdfID KDFID, aeadID AEADID) {
+	suite, err := AssembleCipherSuite(kemID, kdfID, aeadID)
 	if err != nil {
 		t.Fatalf("[%x, %x, %x] Error looking up ciphersuite: %s", kemID, kdfID, aeadID, err)
 	}
@@ -110,8 +110,8 @@ func roundTripAuth(t *testing.T, kemID, kdfID, aeadID uint16) {
 	roundTrip(t, kemID, kdfID, aeadID, ctxI, ctxR)
 }
 
-func roundTripPSKAuth(t *testing.T, kemID, kdfID, aeadID uint16) {
-	suite, err := GetRegisteredCipherSuite(kemID, kdfID, aeadID)
+func roundTripPSKAuth(t *testing.T, kemID KEMID, kdfID KDFID, aeadID AEADID) {
+	suite, err := AssembleCipherSuite(kemID, kdfID, aeadID)
 	if err != nil {
 		t.Fatalf("[%x, %x, %x] Error looking up ciphersuite: %s", kemID, kdfID, aeadID, err)
 	}
