@@ -143,12 +143,17 @@ type ecdhPublicKey struct {
 }
 
 type ecdhScheme struct {
-	id    KEMID
 	curve elliptic.Curve
 }
 
 func (s ecdhScheme) ID() KEMID {
-	return s.id
+	switch s.curve.Params().Name {
+	case "P-256":
+		return DHKEM_P256
+	case "P-521":
+		return DHKEM_P521
+	}
+	panic(fmt.Sprintf("Unsupported curve: %s", s.curve.Params().Name))
 }
 
 func (s ecdhScheme) GenerateKeyPair(rand io.Reader) (KEMPrivateKey, KEMPublicKey, error) {
@@ -362,7 +367,13 @@ type sikeScheme struct {
 }
 
 func (s sikeScheme) ID() KEMID {
-	return s.id
+	switch s.field {
+	case sidh.Fp503:
+		return KEM_SIKE503
+	case sidh.Fp751:
+		return KEM_SIKE751
+	}
+	panic(fmt.Sprintf("Unsupported field: %d", s.field))
 }
 
 func (s sikeScheme) GenerateKeyPair(rand io.Reader) (KEMPrivateKey, KEMPublicKey, error) {
@@ -460,12 +471,18 @@ func (s sikeScheme) PublicKeySize() int {
 // AES-GCM
 
 type aesgcmScheme struct {
-	id      AEADID
 	keySize int
 }
 
 func (s aesgcmScheme) ID() AEADID {
-	return s.id
+	switch s.keySize {
+	case 16:
+		return AEAD_AESGCM128
+	case 32:
+		return AEAD_AESGCM256
+	}
+	panic(fmt.Sprintf("Unsupported key size: %d", s.keySize))
+
 }
 
 func (s aesgcmScheme) New(key []byte) (cipher.AEAD, error) {
@@ -493,11 +510,10 @@ func (s aesgcmScheme) NonceSize() int {
 // ChaCha20-Poly1305
 
 type chachaPolyScheme struct {
-	id AEADID
 }
 
 func (s chachaPolyScheme) ID() AEADID {
-	return s.id
+	return AEAD_CHACHA20POLY1305
 }
 
 func (s chachaPolyScheme) New(key []byte) (cipher.AEAD, error) {
@@ -516,12 +532,17 @@ func (s chachaPolyScheme) NonceSize() int {
 // HKDF
 
 type hkdfScheme struct {
-	id   KDFID
 	hash crypto.Hash
 }
 
 func (s hkdfScheme) ID() KDFID {
-	return s.id
+	switch s.hash {
+	case crypto.SHA256:
+		return KDF_HKDF_SHA256
+	case crypto.SHA512:
+		return KDF_HKDF_SHA512
+	}
+	panic(fmt.Sprintf("Unsupported hash: %d", s.hash))
 }
 
 func (s hkdfScheme) Hash(message []byte) []byte {
@@ -582,10 +603,10 @@ const (
 var kems = map[KEMID]KEMScheme{
 	DHKEM_X25519: dhkemScheme{x25519Scheme{}},
 	DHKEM_X448:   dhkemScheme{x448Scheme{}},
-	DHKEM_P256:   dhkemScheme{ecdhScheme{id: DHKEM_P256, curve: elliptic.P256()}},
-	DHKEM_P521:   dhkemScheme{ecdhScheme{id: DHKEM_P521, curve: elliptic.P521()}},
-	KEM_SIKE503:  sikeScheme{id: KEM_SIKE503, field: sidh.Fp503},
-	KEM_SIKE751:  sikeScheme{id: KEM_SIKE751, field: sidh.Fp751},
+	DHKEM_P256:   dhkemScheme{ecdhScheme{curve: elliptic.P256()}},
+	DHKEM_P521:   dhkemScheme{ecdhScheme{curve: elliptic.P521()}},
+	KEM_SIKE503:  sikeScheme{field: sidh.Fp503},
+	KEM_SIKE751:  sikeScheme{field: sidh.Fp751},
 }
 
 ///////////////////////////
@@ -599,8 +620,8 @@ const (
 )
 
 var kdfs = map[KDFID]KDFScheme{
-	KDF_HKDF_SHA256: hkdfScheme{id: KDF_HKDF_SHA256, hash: crypto.SHA256},
-	KDF_HKDF_SHA512: hkdfScheme{id: KDF_HKDF_SHA512, hash: crypto.SHA512},
+	KDF_HKDF_SHA256: hkdfScheme{hash: crypto.SHA256},
+	KDF_HKDF_SHA512: hkdfScheme{hash: crypto.SHA512},
 }
 
 ///////////////////////////
@@ -615,9 +636,9 @@ const (
 )
 
 var aeads = map[AEADID]AEADScheme{
-	AEAD_AESGCM128:        aesgcmScheme{id: AEAD_AESGCM128, keySize: 16},
-	AEAD_AESGCM256:        aesgcmScheme{id: AEAD_AESGCM256, keySize: 32},
-	AEAD_CHACHA20POLY1305: chachaPolyScheme{id: AEAD_CHACHA20POLY1305},
+	AEAD_AESGCM128:        aesgcmScheme{keySize: 16},
+	AEAD_AESGCM256:        aesgcmScheme{keySize: 32},
+	AEAD_CHACHA20POLY1305: chachaPolyScheme{},
 }
 
 func AssembleCipherSuite(kemID KEMID, kdfID KDFID, aeadID AEADID) (CipherSuite, error) {
