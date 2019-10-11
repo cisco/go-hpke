@@ -775,6 +775,7 @@ func assembleCipherSuiteWithEphemeralKeys(kemID KEMID, kdfID KDFID, aeadID AEADI
 	} else {
 		kem, ok = kems[kemID]
 	}
+
 	if !ok {
 		return CipherSuite{}, fmt.Errorf("Unknown KEM id")
 	}
