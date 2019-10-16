@@ -17,10 +17,10 @@ func randomBytes(size int) []byte {
 
 func TestKEMSchemes(t *testing.T) {
 	schemes := []KEMScheme{
-		dhkemScheme{x25519Scheme{}},
-		dhkemScheme{x448Scheme{}},
-		dhkemScheme{ecdhScheme{curve: elliptic.P256()}},
-		dhkemScheme{ecdhScheme{curve: elliptic.P521()}},
+		dhkemScheme{group: x25519Scheme{}},
+		dhkemScheme{group: x448Scheme{}},
+		dhkemScheme{group: ecdhScheme{curve: elliptic.P256()}},
+		dhkemScheme{group: ecdhScheme{curve: elliptic.P521()}},
 		sikeScheme{field: sidh.Fp503},
 		sikeScheme{field: sidh.Fp751},
 	}
