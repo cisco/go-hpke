@@ -21,23 +21,83 @@ var (
 )
 
 const (
-	outptutTestVectorEnvironmentKey = "HPKE_TEST_VECTORS_OUT"
-	inputTestVectorEnvironmentKey   = "HPKE_TEST_VECTORS_IN"
-	testVectorEncryptionCount       = 10
+	outputTestVectorEnvironmentKey = "HPKE_TEST_VECTORS_OUT"
+	inputTestVectorEnvironmentKey  = "HPKE_TEST_VECTORS_IN"
+	testVectorEncryptionCount      = 10
 )
 
 ///////
-// Symmetric encryption test vector structures
-type rawEncryptionTestVector struct {
-	Plaintext  string `json:"plaintext"`
-	Aad        string `json:"aad"`
-	Ciphertext string `json:"ciphertext"`
+// Infallible marshal / unmarshal
+func fatalOnError(t *testing.T, err error, msg string) {
+	realMsg := fmt.Sprintf("%s: %v", msg, err)
+	if err != nil {
+		if t != nil {
+			t.Fatalf(realMsg)
+		} else {
+			panic(realMsg)
+		}
+	}
 }
 
+func mustUnhex(t *testing.T, h string) []byte {
+	out, err := hex.DecodeString(h)
+	fatalOnError(t, err, "Unhex failed")
+	return out
+}
+
+func mustHex(d []byte) string {
+	return hex.EncodeToString(d)
+}
+
+func mustUnmarshalPriv(t *testing.T, suite CipherSuite, h string) KEMPrivateKey {
+	skm := mustUnhex(t, h)
+	sk, err := suite.KEM.unmarshalPrivate(skm)
+	fatalOnError(t, err, "unmarshalPrivate failed")
+	return sk
+}
+
+func mustMarshalPriv(suite CipherSuite, priv KEMPrivateKey) string {
+	return mustHex(suite.KEM.marshalPrivate(priv))
+}
+
+func mustUnmarshalPub(t *testing.T, suite CipherSuite, h string) KEMPublicKey {
+	pkm := mustUnhex(t, h)
+	pk, err := suite.KEM.Unmarshal(pkm)
+	fatalOnError(t, err, "Unmarshal failed")
+	return pk
+}
+
+func mustMarshalPub(suite CipherSuite, pub KEMPublicKey) string {
+	return mustHex(suite.KEM.Marshal(pub))
+}
+
+///////
+// Symmetric encryption test vector structures
 type encryptionTestVector struct {
 	plaintext  []byte
 	aad        []byte
 	ciphertext []byte
+}
+
+func (etv encryptionTestVector) MarshalJSON() ([]byte, error) {
+	return json.Marshal(map[string]string{
+		"plaintext":  mustHex(etv.plaintext),
+		"aad":        mustHex(etv.aad),
+		"ciphertext": mustHex(etv.ciphertext),
+	})
+}
+
+func (etv *encryptionTestVector) UnmarshalJSON(data []byte) error {
+	raw := map[string]string{}
+	err := json.Unmarshal(data, &raw)
+	if err != nil {
+		return err
+	}
+
+	etv.plaintext = mustUnhex(nil, raw["plaintext"])
+	etv.aad = mustUnhex(nil, raw["aad"])
+	etv.ciphertext = mustUnhex(nil, raw["ciphertext"])
+	return nil
 }
 
 ///////
@@ -72,10 +132,13 @@ type rawTestVector struct {
 	Key     string `json:"key"`
 	Nonce   string `json:"nonce"`
 
-	Encryptions []rawEncryptionTestVector `json:"encryptions"`
+	Encryptions []encryptionTestVector `json:"encryptions"`
 }
 
 type testVector struct {
+	t     *testing.T
+	suite CipherSuite
+
 	// Parameters
 	mode   HPKEMode
 	kemID  KEMID
@@ -86,15 +149,13 @@ type testVector struct {
 	// Private keys
 	skR   KEMPrivateKey
 	skI   KEMPrivateKey
+	skE   KEMPrivateKey
 	psk   []byte
 	pskID []byte
 
 	// Public keys
 	pkR KEMPublicKey
 	pkI KEMPublicKey
-
-	// Ephemeral key
-	skE KEMPrivateKey
 	pkE KEMPublicKey
 
 	// Key schedule inputs and computations
@@ -107,6 +168,72 @@ type testVector struct {
 
 	encryptions []encryptionTestVector
 }
+
+func (tv testVector) MarshalJSON() ([]byte, error) {
+	return json.Marshal(rawTestVector{
+		Mode:   tv.mode,
+		KEMID:  tv.kemID,
+		KDFID:  tv.kdfID,
+		AEADID: tv.aeadID,
+		Info:   mustHex(tv.info),
+
+		SKR:   mustMarshalPriv(tv.suite, tv.skR),
+		SKI:   mustMarshalPriv(tv.suite, tv.skI),
+		SKE:   mustMarshalPriv(tv.suite, tv.skE),
+		PSK:   mustHex(tv.psk),
+		PSKID: mustHex(tv.pskID),
+
+		PKR: mustMarshalPub(tv.suite, tv.pkR),
+		PKI: mustMarshalPub(tv.suite, tv.pkI),
+		PKE: mustMarshalPub(tv.suite, tv.pkE),
+
+		Enc:     mustHex(tv.enc),
+		Zz:      mustHex(tv.zz),
+		Context: mustHex(tv.context),
+		Secret:  mustHex(tv.secret),
+		Key:     mustHex(tv.key),
+		Nonce:   mustHex(tv.nonce),
+
+		Encryptions: tv.encryptions,
+	})
+}
+
+func (tv *testVector) UnmarshalJSON(data []byte) error {
+	raw := rawTestVector{}
+	err := json.Unmarshal(data, &raw)
+	if err != nil {
+		return err
+	}
+
+	tv.mode = raw.Mode
+	tv.kemID = raw.KEMID
+	tv.kdfID = raw.KDFID
+	tv.aeadID = raw.AEADID
+	tv.info = mustUnhex(tv.t, raw.Info)
+
+	tv.skR = mustUnmarshalPriv(tv.t, tv.suite, raw.SKR)
+	tv.skI = mustUnmarshalPriv(tv.t, tv.suite, raw.SKI)
+	tv.skE = mustUnmarshalPriv(tv.t, tv.suite, raw.SKE)
+	tv.psk = mustUnhex(tv.t, raw.PSK)
+	tv.pskID = mustUnhex(tv.t, raw.PSKID)
+
+	tv.pkR = mustUnmarshalPub(tv.t, tv.suite, raw.PKR)
+	tv.pkI = mustUnmarshalPub(tv.t, tv.suite, raw.PKI)
+	tv.pkE = mustUnmarshalPub(tv.t, tv.suite, raw.PKE)
+
+	tv.enc = mustUnhex(tv.t, raw.Enc)
+	tv.zz = mustUnhex(tv.t, raw.Zz)
+	tv.context = mustUnhex(tv.t, raw.Context)
+	tv.secret = mustUnhex(tv.t, raw.Secret)
+	tv.key = mustUnhex(tv.t, raw.Key)
+	tv.nonce = mustUnhex(tv.t, raw.Nonce)
+
+	tv.encryptions = raw.Encryptions
+	return nil
+}
+
+///////
+// Direct tests
 
 func roundTrip(t *testing.T, kemID KEMID, kdfID KDFID, aeadID AEADID, enc *EncryptContext, dec *DecryptContext) {
 	for range make([]struct{}, rtts) {
@@ -249,18 +376,6 @@ func TestModes(t *testing.T) {
 	}
 }
 
-func fromHex(h string) []byte {
-	out, err := hex.DecodeString(h)
-	if err != nil {
-		panic(fmt.Sprintf("Unhex failed: %v", err))
-	}
-	return out
-}
-
-func toHex(d []byte) string {
-	return hex.EncodeToString(d)
-}
-
 func processTestVectorEncryptions(t *testing.T, vector testVector, enc *EncryptContext, dec *DecryptContext) {
 	for _, data := range vector.encryptions {
 		encrypted := enc.Seal(data.aad, data.plaintext)
@@ -281,22 +396,22 @@ func processTestVectorEncryptions(t *testing.T, vector testVector, enc *EncryptC
 
 func (vector testVector) matchesParameters(t *testing.T, setupParams SetupParameters, contextParams ContextParameters) {
 	if !bytes.Equal(setupParams.zz, vector.zz) {
-		t.Fatalf("[%x, %x, %x] Mismatched zz. Expected %s, got %s", vector.kemID, vector.kdfID, vector.aeadID, toHex(vector.zz), toHex(setupParams.zz))
+		t.Fatalf("[%x, %x, %x] Mismatched zz. Expected %s, got %s", vector.kemID, vector.kdfID, vector.aeadID, mustHex(vector.zz), mustHex(setupParams.zz))
 	}
 	if !bytes.Equal(setupParams.enc, vector.enc) {
-		t.Fatalf("[%x, %x, %x] Mismatched enc. Expected %s, got %s", vector.kemID, vector.kdfID, vector.aeadID, toHex(vector.enc), toHex(setupParams.enc))
+		t.Fatalf("[%x, %x, %x] Mismatched enc. Expected %s, got %s", vector.kemID, vector.kdfID, vector.aeadID, mustHex(vector.enc), mustHex(setupParams.enc))
 	}
 	if !bytes.Equal(contextParams.context, vector.context) {
-		t.Fatalf("[%x, %x, %x] Mismatched hpkeContext. Expected %s, got %s", vector.kemID, vector.kdfID, vector.aeadID, toHex(vector.context), toHex(contextParams.context))
+		t.Fatalf("[%x, %x, %x] Mismatched hpkeContext. Expected %s, got %s", vector.kemID, vector.kdfID, vector.aeadID, mustHex(vector.context), mustHex(contextParams.context))
 	}
 	if !bytes.Equal(contextParams.secret, vector.secret) {
-		t.Fatalf("[%x, %x, %x] Mismatched secret. Expected %s, got %s", vector.kemID, vector.kdfID, vector.aeadID, toHex(vector.secret), toHex(contextParams.secret))
+		t.Fatalf("[%x, %x, %x] Mismatched secret. Expected %s, got %s", vector.kemID, vector.kdfID, vector.aeadID, mustHex(vector.secret), mustHex(contextParams.secret))
 	}
 	if !bytes.Equal(contextParams.key, vector.key) {
-		t.Fatalf("[%x, %x, %x] Mismatched key. Expected %s, got %s", vector.kemID, vector.kdfID, vector.aeadID, toHex(vector.key), toHex(contextParams.key))
+		t.Fatalf("[%x, %x, %x] Mismatched key. Expected %s, got %s", vector.kemID, vector.kdfID, vector.aeadID, mustHex(vector.key), mustHex(contextParams.key))
 	}
 	if !bytes.Equal(contextParams.nonce, vector.nonce) {
-		t.Fatalf("[%x, %x, %x] Mismatched nonce. Expected %s, got %s", vector.kemID, vector.kdfID, vector.aeadID, toHex(vector.nonce), toHex(contextParams.nonce))
+		t.Fatalf("[%x, %x, %x] Mismatched nonce. Expected %s, got %s", vector.kemID, vector.kdfID, vector.aeadID, mustHex(vector.nonce), mustHex(contextParams.nonce))
 	}
 }
 
@@ -361,24 +476,9 @@ func processTestVector(t *testing.T, vector testVector) {
 	processTestVectorEncryptions(t, vector, ctxI, ctxR)
 }
 
-func (vector rawEncryptionTestVector) Unmarshal(t *testing.T) encryptionTestVector {
-	return encryptionTestVector{
-		plaintext:  fromHex(vector.Plaintext),
-		aad:        fromHex(vector.Aad),
-		ciphertext: fromHex(vector.Ciphertext),
-	}
-}
-
-func createEncryptionTestVectors(t *testing.T, vectors []rawEncryptionTestVector) []encryptionTestVector {
-	rawVectors := make([]encryptionTestVector, len(vectors))
-	for i, vector := range vectors {
-		rawVectors[i] = vector.Unmarshal(t)
-	}
-	return rawVectors
-}
-
+/*
 func unmarshalPrivate(t *testing.T, suite CipherSuite, encodedKey string) KEMPrivateKey {
-	skM := fromHex(encodedKey)
+	skM := mustUnhex(encodedKey)
 	sk, err := suite.KEM.unmarshalPrivate(skM)
 	if err != nil {
 		t.Fatalf("Error in unmarshalPrivate: %s", err)
@@ -387,7 +487,7 @@ func unmarshalPrivate(t *testing.T, suite CipherSuite, encodedKey string) KEMPri
 }
 
 func unmarshalPublic(t *testing.T, suite CipherSuite, encodedKey string) KEMPublicKey {
-	pkM := fromHex(encodedKey)
+	pkM := mustUnhex(encodedKey)
 	pk, err := suite.KEM.Unmarshal(pkM)
 	if err != nil {
 		t.Fatalf("Error in unmarshalPublic: %s", err)
@@ -419,22 +519,22 @@ func (vector rawTestVector) Unmarshal(t *testing.T) testVector {
 		kemID:       vector.KEMID,
 		kdfID:       vector.KDFID,
 		aeadID:      vector.AEADID,
-		info:        fromHex(vector.Info),
+		info:        mustUnhex(vector.Info),
 		skR:         skR,
 		pkR:         pkR,
 		skI:         skI,
-		psk:         fromHex(vector.PSK),
-		pskID:       fromHex(vector.PSKID),
+		psk:         mustUnhex(vector.PSK),
+		pskID:       mustUnhex(vector.PSKID),
 		pkI:         pkI,
 		skE:         skE,
 		pkE:         pkE,
-		enc:         fromHex(vector.Enc),
-		zz:          fromHex(vector.Zz),
-		context:     fromHex(vector.Context),
-		secret:      fromHex(vector.Secret),
-		key:         fromHex(vector.Key),
-		nonce:       fromHex(vector.Nonce),
-		encryptions: createEncryptionTestVectors(t, vector.Encryptions),
+		enc:         mustUnhex(vector.Enc),
+		zz:          mustUnhex(vector.Zz),
+		context:     mustUnhex(vector.Context),
+		secret:      mustUnhex(vector.Secret),
+		key:         mustUnhex(vector.Key),
+		nonce:       mustUnhex(vector.Nonce),
+		encryptions: vector.Encryptions,
 	}
 
 	return rawVector
@@ -447,15 +547,15 @@ func createTestVectors(t *testing.T, vectors []rawTestVector) []testVector {
 	}
 	return rawVectors
 }
+*/
 
-func processTestVectors(t *testing.T, vectorString string) {
-	var rawVectors []rawTestVector
-	err := json.Unmarshal([]byte(vectorString), &rawVectors)
+func verifyTestVectors(t *testing.T, vectorString []byte) {
+	var vectors []testVector
+	err := json.Unmarshal(vectorString, &vectors)
 	if err != nil {
 		t.Fatalf("Error decoding test vector string: %s", err)
 	}
 
-	vectors := createTestVectors(t, rawVectors)
 	for _, vector := range vectors {
 		processTestVector(t, vector)
 	}
@@ -493,7 +593,7 @@ func generateKeyPair(t *testing.T, suite CipherSuite) (KEMPrivateKey, KEMPublicK
 	return sk, pk
 }
 
-func generateBaseTestVector(t *testing.T, outputFile string, kemID KEMID, kdfID KDFID, aeadID AEADID) testVector {
+func generateBaseTestVector(t *testing.T, kemID KEMID, kdfID KDFID, aeadID AEADID) testVector {
 	suite, err := assembleCipherSuiteWithEphemeralKeys(kemID, kdfID, aeadID, nil)
 	if err != nil {
 		t.Fatalf("[%x, %x, %x] Error looking up ciphersuite: %s", kemID, kdfID, aeadID, err)
@@ -554,7 +654,7 @@ func generateBaseTestVector(t *testing.T, outputFile string, kemID KEMID, kdfID 
 	return vector
 }
 
-func generatePSKTestVector(t *testing.T, outputFile string, kemID KEMID, kdfID KDFID, aeadID AEADID) testVector {
+func generatePSKTestVector(t *testing.T, kemID KEMID, kdfID KDFID, aeadID AEADID) testVector {
 	suite, err := assembleCipherSuiteWithEphemeralKeys(kemID, kdfID, aeadID, nil)
 	if err != nil {
 		t.Fatalf("[%x, %x, %x] Error looking up ciphersuite: %s", kemID, kdfID, aeadID, err)
@@ -615,7 +715,7 @@ func generatePSKTestVector(t *testing.T, outputFile string, kemID KEMID, kdfID K
 	return vector
 }
 
-func generateAuthTestVector(t *testing.T, outputFile string, kemID KEMID, kdfID KDFID, aeadID AEADID) testVector {
+func generateAuthTestVector(t *testing.T, kemID KEMID, kdfID KDFID, aeadID AEADID) testVector {
 	suite, err := assembleCipherSuiteWithEphemeralKeys(kemID, kdfID, aeadID, nil)
 	if err != nil {
 		t.Fatalf("[%x, %x, %x] Error looking up ciphersuite: %s", kemID, kdfID, aeadID, err)
@@ -677,7 +777,7 @@ func generateAuthTestVector(t *testing.T, outputFile string, kemID KEMID, kdfID 
 	return vector
 }
 
-func generatePSKAuthTestVector(t *testing.T, outputFile string, kemID KEMID, kdfID KDFID, aeadID AEADID) testVector {
+func generatePSKAuthTestVector(t *testing.T, kemID KEMID, kdfID KDFID, aeadID AEADID) testVector {
 	suite, err := assembleCipherSuiteWithEphemeralKeys(kemID, kdfID, aeadID, nil)
 	if err != nil {
 		t.Fatalf("[%x, %x, %x] Error looking up ciphersuite: %s", kemID, kdfID, aeadID, err)
@@ -739,18 +839,7 @@ func generatePSKAuthTestVector(t *testing.T, outputFile string, kemID KEMID, kdf
 	return vector
 }
 
-func createRawEncryptionTestVectors(t *testing.T, vectors []encryptionTestVector) []rawEncryptionTestVector {
-	rawVectors := make([]rawEncryptionTestVector, len(vectors))
-	for i, vector := range vectors {
-		rawVectors[i] = rawEncryptionTestVector{
-			Plaintext:  toHex(vector.plaintext),
-			Aad:        toHex(vector.aad),
-			Ciphertext: toHex(vector.ciphertext),
-		}
-	}
-	return rawVectors
-}
-
+/*
 func createRawTestVectors(t *testing.T, vectors []testVector) []rawTestVector {
 	rawVectors := make([]rawTestVector, len(vectors))
 	for i, vector := range vectors {
@@ -764,30 +853,31 @@ func createRawTestVectors(t *testing.T, vectors []testVector) []rawTestVector {
 			KEMID:       vector.kemID,
 			KDFID:       vector.kdfID,
 			AEADID:      vector.aeadID,
-			Info:        toHex(vector.info),
-			SKR:         toHex(suite.KEM.marshalPrivate(vector.skR)),
-			PKR:         toHex(suite.KEM.Marshal(vector.pkR)),
-			SKI:         toHex(suite.KEM.marshalPrivate(vector.skI)),
-			PSK:         toHex(vector.psk),
-			PSKID:       toHex(vector.pskID),
-			PKI:         toHex(suite.KEM.Marshal(vector.pkI)),
-			SKE:         toHex(suite.KEM.marshalPrivate(vector.skE)),
-			PKE:         toHex(suite.KEM.Marshal(vector.pkE)),
-			Enc:         toHex(vector.enc),
-			Zz:          toHex(vector.zz),
-			Context:     toHex(vector.context),
-			Secret:      toHex(vector.secret),
-			Key:         toHex(vector.key),
-			Nonce:       toHex(vector.nonce),
-			Encryptions: createRawEncryptionTestVectors(t, vector.encryptions),
+			Info:        mustHex(vector.info),
+			SKR:         mustHex(suite.KEM.marshalPrivate(vector.skR)),
+			PKR:         mustHex(suite.KEM.Marshal(vector.pkR)),
+			SKI:         mustHex(suite.KEM.marshalPrivate(vector.skI)),
+			PSK:         mustHex(vector.psk),
+			PSKID:       mustHex(vector.pskID),
+			PKI:         mustHex(suite.KEM.Marshal(vector.pkI)),
+			SKE:         mustHex(suite.KEM.marshalPrivate(vector.skE)),
+			PKE:         mustHex(suite.KEM.Marshal(vector.pkE)),
+			Enc:         mustHex(vector.enc),
+			Zz:          mustHex(vector.zz),
+			Context:     mustHex(vector.context),
+			Secret:      mustHex(vector.secret),
+			Key:         mustHex(vector.key),
+			Nonce:       mustHex(vector.nonce),
+			Encryptions: vector.encryptions,
 		}
 	}
 	return rawVectors
 }
+*/
 
 func TestVectorGenerate(t *testing.T) {
 	var outputFile string
-	if outputFile = os.Getenv(outptutTestVectorEnvironmentKey); len(outputFile) == 0 {
+	if outputFile = os.Getenv(outputTestVectorEnvironmentKey); len(outputFile) == 0 {
 		t.Skip("Test vectors were not requested")
 	}
 
@@ -800,29 +890,25 @@ func TestVectorGenerate(t *testing.T) {
 	for _, kemID := range supportedKEMs {
 		for _, kdfID := range supportedKDFs {
 			for _, aeadID := range supportedAEADs {
-				vectors = append(vectors, generateBaseTestVector(t, outputFile, kemID, kdfID, aeadID))
-				vectors = append(vectors, generatePSKTestVector(t, outputFile, kemID, kdfID, aeadID))
-				vectors = append(vectors, generateAuthTestVector(t, outputFile, kemID, kdfID, aeadID))
-				vectors = append(vectors, generatePSKAuthTestVector(t, outputFile, kemID, kdfID, aeadID))
+				vectors = append(vectors, generateBaseTestVector(t, kemID, kdfID, aeadID))
+				vectors = append(vectors, generatePSKTestVector(t, kemID, kdfID, aeadID))
+				vectors = append(vectors, generateAuthTestVector(t, kemID, kdfID, aeadID))
+				vectors = append(vectors, generatePSKAuthTestVector(t, kemID, kdfID, aeadID))
 			}
 		}
 	}
 
-	rawTestVectors := createRawTestVectors(t, vectors)
-	encodedVector, err := json.Marshal(rawTestVectors)
+	// Encode the test vectors
+	encoded, err := json.Marshal(vectors)
 	if err != nil {
 		t.Fatalf("Error producing test vectors: %s", err)
 	}
 
-	encodedVectorString := fmt.Sprintf("%s", string(encodedVector))
-	processTestVectors(t, encodedVectorString)
-	ioutil.WriteFile(outputFile, []byte(encodedVectorString), 0644)
+	// Verify that we process them correctly
+	verifyTestVectors(t, encoded)
 
-	var decodedRawTestVectors []rawTestVector
-	err = json.Unmarshal([]byte(encodedVectorString), &decodedRawTestVectors)
-	if err != nil {
-		t.Fatalf("Error decoding test vectors: %s", err)
-	}
+	// Write them to the indicated file
+	ioutil.WriteFile(outputFile, encoded, 0644)
 }
 
 func TestVectorInterop(t *testing.T) {
@@ -831,10 +917,10 @@ func TestVectorInterop(t *testing.T) {
 		t.Skip("Test vectors were not provided")
 	}
 
-	data, err := ioutil.ReadFile(inputFile)
+	encoded, err := ioutil.ReadFile(inputFile)
 	if err != nil {
 		t.Fatalf("Failed reading test vectors: %s", err)
 	}
 
-	processTestVectors(t, string(data))
+	verifyTestVectors(t, encoded)
 }
