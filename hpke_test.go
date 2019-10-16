@@ -71,6 +71,12 @@ func mustMarshalPub(suite CipherSuite, pub KEMPublicKey) string {
 	return mustHex(suite.KEM.Marshal(pub))
 }
 
+func mustGenerateKeyPair(t *testing.T, suite CipherSuite) (KEMPrivateKey, KEMPublicKey) {
+	sk, pk, err := suite.KEM.GenerateKeyPair(rand.Reader)
+	fatalOnError(t, err, "Error generating DH key pair")
+	return sk, pk
+}
+
 ///////
 // Symmetric encryption test vector structures
 type encryptionTestVector struct {
@@ -233,12 +239,76 @@ func (tv *testVector) UnmarshalJSON(data []byte) error {
 }
 
 ///////
+// Generalize setup functions so that we can iterate over them easily
+type setupMode struct {
+	I func(suite CipherSuite, pkR KEMPublicKey, info []byte, skI KEMPrivateKey, psk, pskID []byte) ([]byte, *EncryptContext, error)
+	R func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkI KEMPublicKey, psk, pskID []byte) (*DecryptContext, error)
+}
+
+var setupModes = map[string]setupMode{
+	"base": {
+		I: func(suite CipherSuite, pkR KEMPublicKey, info []byte, skI KEMPrivateKey, psk, pskID []byte) ([]byte, *EncryptContext, error) {
+			return SetupBaseI(suite, rand.Reader, pkR, info)
+		},
+		R: func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkI KEMPublicKey, psk, pskID []byte) (*DecryptContext, error) {
+			return SetupBaseR(suite, skR, enc, info)
+		},
+	},
+	"psk": {
+		I: func(suite CipherSuite, pkR KEMPublicKey, info []byte, skI KEMPrivateKey, psk, pskID []byte) ([]byte, *EncryptContext, error) {
+			return SetupPSKI(suite, rand.Reader, pkR, psk, pskID, info)
+		},
+		R: func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkI KEMPublicKey, psk, pskID []byte) (*DecryptContext, error) {
+			return SetupPSKR(suite, skR, enc, psk, pskID, info)
+		},
+	},
+	"auth": {
+		I: func(suite CipherSuite, pkR KEMPublicKey, info []byte, skI KEMPrivateKey, psk, pskID []byte) ([]byte, *EncryptContext, error) {
+			return SetupAuthI(suite, rand.Reader, pkR, skI, info)
+		},
+		R: func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkI KEMPublicKey, psk, pskID []byte) (*DecryptContext, error) {
+			return SetupAuthR(suite, skR, pkI, enc, info)
+		},
+	},
+	"pskauth": {
+		I: func(suite CipherSuite, pkR KEMPublicKey, info []byte, skI KEMPrivateKey, psk, pskID []byte) ([]byte, *EncryptContext, error) {
+			return SetupPSKAuthI(suite, rand.Reader, pkR, skI, psk, pskID, info)
+		},
+		R: func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkI KEMPublicKey, psk, pskID []byte) (*DecryptContext, error) {
+			return SetupPSKAuthR(suite, skR, pkI, enc, psk, pskID, info)
+		},
+	},
+}
+
+///////
 // Direct tests
 
-func roundTrip(t *testing.T, kemID KEMID, kdfID KDFID, aeadID AEADID, enc *EncryptContext, dec *DecryptContext) {
+func roundTrip(t *testing.T, kemID KEMID, kdfID KDFID, aeadID AEADID, setup setupMode) {
+	suite, err := AssembleCipherSuite(kemID, kdfID, aeadID)
+	if err != nil {
+		t.Fatalf("[%x, %x, %x] Error looking up ciphersuite: %s", kemID, kdfID, aeadID, err)
+	}
+
+	if _, ok := suite.KEM.(AuthKEMScheme); !ok {
+		return
+	}
+
+	skI, pkI := mustGenerateKeyPair(t, suite)
+	skR, pkR := mustGenerateKeyPair(t, suite)
+
+	enc, ctxI, err := setup.I(suite, pkR, info, skI, psk, pskID)
+	if err != nil {
+		t.Fatalf("[%x, %x, %x] Error in SetupAuthI: %s", kemID, kdfID, aeadID, err)
+	}
+
+	ctxR, err := setup.R(suite, skR, enc, info, pkI, psk, pskID)
+	if err != nil {
+		t.Fatalf("[%x, %x, %x] Error in SetupBaseI: %s", kemID, kdfID, aeadID, err)
+	}
+
 	for range make([]struct{}, rtts) {
-		encrypted := enc.Seal(aad, original)
-		decrypted, err := dec.Open(aad, encrypted)
+		encrypted := ctxI.Seal(aad, original)
+		decrypted, err := ctxR.Open(aad, encrypted)
 		if err != nil {
 			t.Fatalf("[%x, %x, %x] Error in Open: %s", kemID, kdfID, aeadID, err)
 		}
@@ -249,128 +319,14 @@ func roundTrip(t *testing.T, kemID KEMID, kdfID KDFID, aeadID AEADID, enc *Encry
 	}
 }
 
-func roundTripBase(t *testing.T, kemID KEMID, kdfID KDFID, aeadID AEADID) {
-	suite, err := AssembleCipherSuite(kemID, kdfID, aeadID)
-	if err != nil {
-		t.Fatalf("[%x, %x, %x] Error looking up ciphersuite: %s", kemID, kdfID, aeadID, err)
-	}
-
-	skR, pkR, err := suite.KEM.GenerateKeyPair(rand.Reader)
-	if err != nil {
-		t.Fatalf("[%x, %x, %x] Error generating DH key pair: %s", kemID, kdfID, aeadID, err)
-	}
-
-	enc, ctxI, err := SetupBaseI(suite, rand.Reader, pkR, info)
-	if err != nil {
-		t.Fatalf("[%x, %x, %x] Error in SetupBaseI: %s", kemID, kdfID, aeadID, err)
-	}
-
-	ctxR, err := SetupBaseR(suite, skR, enc, info)
-	if err != nil {
-		t.Fatalf("[%x, %x, %x] Error in SetupBaseI: %s", kemID, kdfID, aeadID, err)
-	}
-
-	roundTrip(t, kemID, kdfID, aeadID, ctxI, ctxR)
-}
-
-func roundTripPSK(t *testing.T, kemID KEMID, kdfID KDFID, aeadID AEADID) {
-	suite, err := AssembleCipherSuite(kemID, kdfID, aeadID)
-	if err != nil {
-		t.Fatalf("[%x, %x, %x] Error looking up ciphersuite: %s", kemID, kdfID, aeadID, err)
-	}
-
-	skR, pkR, err := suite.KEM.GenerateKeyPair(rand.Reader)
-	if err != nil {
-		t.Fatalf("[%x, %x, %x] Error generating DH key pair: %s", kemID, kdfID, aeadID, err)
-	}
-
-	enc, ctxI, err := SetupPSKI(suite, rand.Reader, pkR, psk, pskID, info)
-	if err != nil {
-		t.Fatalf("[%x, %x, %x] Error in SetupPSKI: %s", kemID, kdfID, aeadID, err)
-	}
-
-	ctxR, err := SetupPSKR(suite, skR, enc, psk, pskID, info)
-	if err != nil {
-		t.Fatalf("[%x, %x, %x] Error in SetupBaseI: %s", kemID, kdfID, aeadID, err)
-	}
-
-	roundTrip(t, kemID, kdfID, aeadID, ctxI, ctxR)
-}
-
-func roundTripAuth(t *testing.T, kemID KEMID, kdfID KDFID, aeadID AEADID) {
-	suite, err := AssembleCipherSuite(kemID, kdfID, aeadID)
-	if err != nil {
-		t.Fatalf("[%x, %x, %x] Error looking up ciphersuite: %s", kemID, kdfID, aeadID, err)
-	}
-
-	if _, ok := suite.KEM.(AuthKEMScheme); !ok {
-		return
-	}
-
-	skI, pkI, err := suite.KEM.GenerateKeyPair(rand.Reader)
-	if err != nil {
-		t.Fatalf("[%x, %x, %x] Error generating initiator DH key pair: %s", kemID, kdfID, aeadID, err)
-	}
-
-	skR, pkR, err := suite.KEM.GenerateKeyPair(rand.Reader)
-	if err != nil {
-		t.Fatalf("[%x, %x, %x] Error generating responder DH key pair: %s", kemID, kdfID, aeadID, err)
-	}
-
-	enc, ctxI, err := SetupAuthI(suite, rand.Reader, pkR, skI, info)
-	if err != nil {
-		t.Fatalf("[%x, %x, %x] Error in SetupAuthI: %s", kemID, kdfID, aeadID, err)
-	}
-
-	ctxR, err := SetupAuthR(suite, skR, pkI, enc, info)
-	if err != nil {
-		t.Fatalf("[%x, %x, %x] Error in SetupBaseI: %s", kemID, kdfID, aeadID, err)
-	}
-
-	roundTrip(t, kemID, kdfID, aeadID, ctxI, ctxR)
-}
-
-func roundTripPSKAuth(t *testing.T, kemID KEMID, kdfID KDFID, aeadID AEADID) {
-	suite, err := AssembleCipherSuite(kemID, kdfID, aeadID)
-	if err != nil {
-		t.Fatalf("[%x, %x, %x] Error looking up ciphersuite: %s", kemID, kdfID, aeadID, err)
-	}
-
-	if _, ok := suite.KEM.(AuthKEMScheme); !ok {
-		return
-	}
-
-	skI, pkI, err := suite.KEM.GenerateKeyPair(rand.Reader)
-	if err != nil {
-		t.Fatalf("[%x, %x, %x] Error generating initiator DH key pair: %s", kemID, kdfID, aeadID, err)
-	}
-
-	skR, pkR, err := suite.KEM.GenerateKeyPair(rand.Reader)
-	if err != nil {
-		t.Fatalf("[%x, %x, %x] Error generating responder DH key pair: %s", kemID, kdfID, aeadID, err)
-	}
-
-	enc, ctxI, err := SetupPSKAuthI(suite, rand.Reader, pkR, skI, psk, pskID, info)
-	if err != nil {
-		t.Fatalf("[%x, %x, %x] Error in SetupPSKAuthI: %s", kemID, kdfID, aeadID, err)
-	}
-
-	ctxR, err := SetupPSKAuthR(suite, skR, pkI, enc, psk, pskID, info)
-	if err != nil {
-		t.Fatalf("[%x, %x, %x] Error in SetupBaseI: %s", kemID, kdfID, aeadID, err)
-	}
-
-	roundTrip(t, kemID, kdfID, aeadID, ctxI, ctxR)
-}
-
 func TestModes(t *testing.T) {
 	for kemID, _ := range kems {
 		for kdfID, _ := range kdfs {
 			for aeadID, _ := range aeads {
-				roundTripBase(t, kemID, kdfID, aeadID)
-				roundTripAuth(t, kemID, kdfID, aeadID)
-				roundTripPSK(t, kemID, kdfID, aeadID)
-				roundTripPSKAuth(t, kemID, kdfID, aeadID)
+				for mode, setup := range setupModes {
+					t.Logf("[%04x : %04x : %04x: %s]", kemID, kdfID, aeadID, mode)
+					roundTrip(t, kemID, kdfID, aeadID, setup)
+				}
 			}
 		}
 	}
@@ -585,14 +541,7 @@ func generateEncryptionTestVectors(ctxI *EncryptContext, ctxR *DecryptContext) (
 	return vectors, nil
 }
 
-func generateKeyPair(t *testing.T, suite CipherSuite) (KEMPrivateKey, KEMPublicKey) {
-	sk, pk, err := suite.KEM.GenerateKeyPair(rand.Reader)
-	if err != nil {
-		t.Fatalf("[%x, %x, %x] Error generating DH key pair: %s", suite.KEM.ID(), suite.KDF.ID(), suite.AEAD.ID(), err)
-	}
-	return sk, pk
-}
-
+/*
 func generateBaseTestVector(t *testing.T, kemID KEMID, kdfID KDFID, aeadID AEADID) testVector {
 	suite, err := assembleCipherSuiteWithEphemeralKeys(kemID, kdfID, aeadID, nil)
 	if err != nil {
@@ -875,6 +824,69 @@ func createRawTestVectors(t *testing.T, vectors []testVector) []rawTestVector {
 }
 */
 
+func generateTestVector(t *testing.T, setup setupMode, kemID KEMID, kdfID KDFID, aeadID AEADID) testVector {
+	suite, err := assembleCipherSuiteWithEphemeralKeys(kemID, kdfID, aeadID, nil)
+	if err != nil {
+		t.Fatalf("[%x, %x, %x] Error looking up ciphersuite: %s", kemID, kdfID, aeadID, err)
+	}
+
+	skE, pkE := mustGenerateKeyPair(t, suite)
+	skR, pkR := mustGenerateKeyPair(t, suite)
+	skI, pkI := mustGenerateKeyPair(t, suite)
+
+	suite, err = assembleCipherSuiteWithEphemeralKeys(kemID, kdfID, aeadID, skE)
+	if err != nil {
+		t.Fatalf("[%x, %x, %x] Error looking up ciphersuite: %s", kemID, kdfID, aeadID, err)
+	}
+
+	enc, ctxI, err := setup.I(suite, pkR, info, skI, psk, pskID)
+	if err != nil {
+		t.Fatalf("[%x, %x, %x] Error in SetupPSKI: %s", kemID, kdfID, aeadID, err)
+	}
+
+	ctxR, err := setup.R(suite, skR, enc, info, pkI, psk, pskID)
+	if err != nil {
+		t.Fatalf("[%x, %x, %x] Error in SetupPSKR: %s", kemID, kdfID, aeadID, err)
+	}
+
+	setupParams, contextParams := ctxI.parameters()
+	key := make([]byte, len(contextParams.key))
+	copy(key, contextParams.key)
+	nonce := make([]byte, len(contextParams.nonce))
+	copy(nonce, contextParams.nonce)
+
+	encryptionVectors, err := generateEncryptionTestVectors(ctxI, ctxR)
+	if err != nil {
+		t.Fatalf("[%x, %x, %x] Error in generateEncryptionTestVectors: %s", kemID, kdfID, aeadID, err)
+	}
+
+	vector := testVector{
+		mode:        modePSKAuth,
+		kemID:       kemID,
+		kdfID:       kdfID,
+		aeadID:      aeadID,
+		info:        info,
+		skR:         skR,
+		pkR:         pkR,
+		skI:         skI,
+		psk:         psk,
+		pskID:       pskID,
+		pkI:         pkI,
+		skE:         skE,
+		pkE:         pkE,
+		enc:         setupParams.enc,
+		zz:          setupParams.zz,
+		context:     contextParams.context,
+		secret:      contextParams.secret,
+		key:         key,
+		nonce:       nonce,
+		encryptions: encryptionVectors,
+	}
+
+	return vector
+
+}
+
 func TestVectorGenerate(t *testing.T) {
 	var outputFile string
 	if outputFile = os.Getenv(outputTestVectorEnvironmentKey); len(outputFile) == 0 {
@@ -890,10 +902,9 @@ func TestVectorGenerate(t *testing.T) {
 	for _, kemID := range supportedKEMs {
 		for _, kdfID := range supportedKDFs {
 			for _, aeadID := range supportedAEADs {
-				vectors = append(vectors, generateBaseTestVector(t, kemID, kdfID, aeadID))
-				vectors = append(vectors, generatePSKTestVector(t, kemID, kdfID, aeadID))
-				vectors = append(vectors, generateAuthTestVector(t, kemID, kdfID, aeadID))
-				vectors = append(vectors, generatePSKAuthTestVector(t, kemID, kdfID, aeadID))
+				for _, setup := range setupModes {
+					vectors = append(vectors, generateTestVector(t, setup, kemID, kdfID, aeadID))
+				}
 			}
 		}
 	}
