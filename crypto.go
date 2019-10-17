@@ -65,16 +65,13 @@ func (s dhkemScheme) unmarshalPrivate(enc []byte) (KEMPrivateKey, error) {
 
 func (s *dhkemScheme) setEphemeralKeyPair(skE KEMPrivateKey) {
 	s.skE = skE
-	fmt.Printf("setting fixed ephemeral %v\n", s.skE != nil)
 }
 
 func (s dhkemScheme) getEphemeralKeyPair(rand io.Reader) (KEMPrivateKey, KEMPublicKey, error) {
 	if s.skE != nil {
-		fmt.Printf("returning fixed ephemeral: %v %x %x\n", s.ID(), s.marshalPrivate(s.skE), s.Marshal(s.skE.PublicKey()))
 		return s.skE, s.skE.PublicKey(), nil
 	}
 
-	fmt.Printf("returning fresh ephemeral\n")
 	return s.group.GenerateKeyPair(rand)
 }
 
