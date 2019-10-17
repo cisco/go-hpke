@@ -405,7 +405,7 @@ func verifyEncryptions(tv testVector, enc *EncryptContext, dec *DecryptContext) 
 	}
 }
 
-func verifyParameters(tv testVector, setupParams SetupParameters, contextParams ContextParameters) {
+func verifyParameters(tv testVector, setupParams setupParameters, contextParams contextParameters) {
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'zz'", tv.zz, setupParams.zz)
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'enc'", tv.enc, setupParams.enc)
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'context'", tv.context, contextParams.context)
