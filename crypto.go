@@ -26,11 +26,12 @@ type dhScheme interface {
 	ID() KEMID
 	GenerateKeyPair(rand io.Reader) (KEMPrivateKey, KEMPublicKey, error)
 	Marshal(pk KEMPublicKey) []byte
-	marshalPrivate(sk KEMPrivateKey) []byte
 	Unmarshal(enc []byte) (KEMPublicKey, error)
-	unmarshalPrivate(enc []byte) (KEMPrivateKey, error)
 	DH(priv KEMPrivateKey, pub KEMPublicKey) ([]byte, error)
 	PublicKeySize() int
+
+	marshalPrivate(sk KEMPrivateKey) []byte
+	unmarshalPrivate(enc []byte) (KEMPrivateKey, error)
 }
 
 type dhkemScheme struct {
@@ -60,6 +61,10 @@ func (s dhkemScheme) Unmarshal(enc []byte) (KEMPublicKey, error) {
 
 func (s dhkemScheme) unmarshalPrivate(enc []byte) (KEMPrivateKey, error) {
 	return s.group.unmarshalPrivate(enc)
+}
+
+func (s *dhkemScheme) setEphemeralKeyPair(skE KEMPrivateKey) {
+	s.skE = skE
 }
 
 func (s dhkemScheme) getEphemeralKeyPair(rand io.Reader) (KEMPrivateKey, KEMPublicKey, error) {
@@ -575,6 +580,10 @@ func (s sikeScheme) PublicKeySize() int {
 	return rawPub.Size()
 }
 
+func (s sikeScheme) setEphemeralKeyPair(skE KEMPrivateKey) {
+	panic("SIKE cannot use a pre-set ephemeral key pair")
+}
+
 //////////
 // AES-GCM
 
@@ -709,12 +718,31 @@ const (
 )
 
 var kems = map[KEMID]KEMScheme{
-	DHKEM_X25519: dhkemScheme{group: x25519Scheme{}},
-	DHKEM_X448:   dhkemScheme{group: x448Scheme{}},
-	DHKEM_P256:   dhkemScheme{group: ecdhScheme{curve: elliptic.P256()}},
-	DHKEM_P521:   dhkemScheme{group: ecdhScheme{curve: elliptic.P521()}},
-	KEM_SIKE503:  sikeScheme{field: sidh.Fp503},
-	KEM_SIKE751:  sikeScheme{field: sidh.Fp751},
+	DHKEM_X25519: &dhkemScheme{group: x25519Scheme{}},
+	DHKEM_X448:   &dhkemScheme{group: x448Scheme{}},
+	DHKEM_P256:   &dhkemScheme{group: ecdhScheme{curve: elliptic.P256()}},
+	DHKEM_P521:   &dhkemScheme{group: ecdhScheme{curve: elliptic.P521()}},
+	KEM_SIKE503:  &sikeScheme{field: sidh.Fp503},
+	KEM_SIKE751:  &sikeScheme{field: sidh.Fp751},
+}
+
+func newKEMScheme(kemID KEMID) (KEMScheme, bool) {
+	switch kemID {
+	case DHKEM_X25519:
+		return &dhkemScheme{group: x25519Scheme{}}, true
+	case DHKEM_X448:
+		return &dhkemScheme{group: x448Scheme{}}, true
+	case DHKEM_P256:
+		return &dhkemScheme{group: ecdhScheme{curve: elliptic.P256()}}, true
+	case DHKEM_P521:
+		return &dhkemScheme{group: ecdhScheme{curve: elliptic.P521()}}, true
+	case KEM_SIKE503:
+		return &sikeScheme{field: sidh.Fp503}, true
+	case KEM_SIKE751:
+		return &sikeScheme{field: sidh.Fp751}, true
+	default:
+		return nil, false
+	}
 }
 
 ///////////////////////////
@@ -749,33 +777,8 @@ var aeads = map[AEADID]AEADScheme{
 	AEAD_CHACHA20POLY1305: chachaPolyScheme{},
 }
 
-func assembleKEMWithEphemeralKeys(kemID KEMID, sk KEMPrivateKey) (KEMScheme, bool) {
-	switch kemID {
-	case DHKEM_X25519:
-		return dhkemScheme{group: x25519Scheme{}, skE: sk}, true
-	case DHKEM_X448:
-		return dhkemScheme{group: x448Scheme{}, skE: sk}, true
-	case DHKEM_P256:
-		return dhkemScheme{group: ecdhScheme{curve: elliptic.P256()}, skE: sk}, true
-	case DHKEM_P521:
-		return dhkemScheme{group: ecdhScheme{curve: elliptic.P521()}, skE: sk}, true
-	case KEM_SIKE503:
-		return sikeScheme{field: sidh.Fp503}, true
-	case KEM_SIKE751:
-		return sikeScheme{field: sidh.Fp751}, true
-	}
-	return nil, false
-}
-
-func assembleCipherSuiteWithEphemeralKeys(kemID KEMID, kdfID KDFID, aeadID AEADID, sk KEMPrivateKey) (CipherSuite, error) {
-	var kem KEMScheme
-	var ok bool
-	if sk != nil {
-		kem, ok = assembleKEMWithEphemeralKeys(kemID, sk)
-	} else {
-		kem, ok = kems[kemID]
-	}
-
+func AssembleCipherSuite(kemID KEMID, kdfID KDFID, aeadID AEADID) (CipherSuite, error) {
+	kem, ok := newKEMScheme(kemID)
 	if !ok {
 		return CipherSuite{}, fmt.Errorf("Unknown KEM id")
 	}
@@ -795,8 +798,4 @@ func assembleCipherSuiteWithEphemeralKeys(kemID KEMID, kdfID KDFID, aeadID AEADI
 		KDF:  kdf,
 		AEAD: aead,
 	}, nil
-}
-
-func AssembleCipherSuite(kemID KEMID, kdfID KDFID, aeadID AEADID) (CipherSuite, error) {
-	return assembleCipherSuiteWithEphemeralKeys(kemID, kdfID, aeadID, nil)
 }
