@@ -140,10 +140,19 @@ type hpkeContext struct {
 }
 
 type contextParameters struct {
+	suite   CipherSuite
 	context []byte
 	secret  []byte
-	key     []byte
-	nonce   []byte
+}
+
+func (cp contextParameters) aeadKey() []byte {
+	context := append([]byte("hpke key"), cp.context...)
+	return cp.suite.KDF.Expand(cp.secret, context, cp.suite.AEAD.KeySize())
+}
+
+func (cp contextParameters) aeadNonce() []byte {
+	context := append([]byte("hpke nonce"), cp.context...)
+	return cp.suite.KDF.Expand(cp.secret, context, cp.suite.AEAD.NonceSize())
 }
 
 type setupParameters struct {
@@ -170,100 +179,94 @@ func keySchedule(suite CipherSuite, mode HPKEMode, pkR KEMPublicKey, zz, enc, in
 	// secret = Extract(psk, zz)
 	secret := suite.KDF.Extract(psk, zz)
 
-	// key = Expand(secret, concat("hpke key", context), Nk)
-	keyContext := append([]byte("hpke key"), context...)
-	key := suite.KDF.Expand(secret, keyContext, suite.AEAD.KeySize())
-
-	// nonce = Expand(secret, concat("hpke nonce", context), Nn)
-	nonceContext := append([]byte("hpke nonce"), context...)
-	nonce := suite.KDF.Expand(secret, nonceContext, suite.AEAD.NonceSize())
-
 	params := contextParameters{
+		suite:   suite,
 		context: context,
 		secret:  secret,
-		key:     key,
-		nonce:   nonce,
 	}
 
 	return params, nil
 }
 
-type context struct {
+type cipherContext struct {
+	key   []byte
+	nonce []byte
 	aead  cipher.AEAD
 	seq   uint64
-	nonce []byte
+
+	setupParams   setupParameters
+	contextParams contextParameters
 }
 
-func (ctx *context) updateNonce() {
+func newCipherContext(suite CipherSuite, setupParams setupParameters, contextParams contextParameters) (cipherContext, error) {
+	key := contextParams.aeadKey()
+	nonce := contextParams.aeadNonce()
+
+	aead, err := suite.AEAD.New(key)
+	if err != nil {
+		return cipherContext{}, err
+	}
+
+	return cipherContext{key, nonce, aead, 0, setupParams, contextParams}, nil
+}
+
+func (ctx *cipherContext) makeNonce() []byte {
 	ctx.seq += 1
 	if ctx.seq == 0 {
 		panic("sequence number wrapped")
 	}
 
 	buf := make([]byte, 8)
-	delta := ctx.seq ^ (ctx.seq - 1)
-	binary.BigEndian.PutUint64(buf, delta)
+	binary.BigEndian.PutUint64(buf, ctx.seq)
 
 	Nn := len(ctx.nonce)
+	nonce := make([]byte, Nn)
+	copy(nonce, ctx.nonce)
 	for i := range buf {
-		ctx.nonce[Nn-8+i] ^= buf[i]
+		nonce[Nn-8+i] ^= buf[i]
 	}
+
+	return nonce
 }
 
 type EncryptContext struct {
-	context
-	setupParams   setupParameters
-	contextParams contextParameters
+	cipherContext
 }
 
-func newEncContext(suite CipherSuite, setupParams setupParameters, contextParams contextParameters) (*EncryptContext, error) {
-	aead, err := suite.AEAD.New(contextParams.key)
+func newEncryptContext(suite CipherSuite, setupParams setupParameters, contextParams contextParameters) (*EncryptContext, error) {
+	ctx, err := newCipherContext(suite, setupParams, contextParams)
 	if err != nil {
 		return nil, err
 	}
 
-	ctx := context{aead, 0, contextParams.nonce}
-	return &EncryptContext{context: ctx, setupParams: setupParams, contextParams: contextParams}, nil
+	return &EncryptContext{ctx}, nil
 }
 
 func (ctx *EncryptContext) Seal(aad, pt []byte) []byte {
-	ct := ctx.aead.Seal(nil, ctx.nonce, pt, aad)
-	ctx.updateNonce()
+	ct := ctx.aead.Seal(nil, ctx.makeNonce(), pt, aad)
 	return ct
 }
 
-func (ctx EncryptContext) parameters() (setupParameters, contextParameters) {
-	return ctx.setupParams, ctx.contextParams
-}
-
 type DecryptContext struct {
-	context
-	setupParams   setupParameters
-	contextParams contextParameters
+	cipherContext
 }
 
-func newDecContext(suite CipherSuite, setupParams setupParameters, contextParams contextParameters) (*DecryptContext, error) {
-	aead, err := suite.AEAD.New(contextParams.key)
+func newDecryptContext(suite CipherSuite, setupParams setupParameters, contextParams contextParameters) (*DecryptContext, error) {
+	ctx, err := newCipherContext(suite, setupParams, contextParams)
 	if err != nil {
 		return nil, err
 	}
 
-	ctx := context{aead, 0, contextParams.nonce}
-	return &DecryptContext{context: ctx, setupParams: setupParams, contextParams: contextParams}, nil
+	return &DecryptContext{ctx}, nil
 }
 
 func (ctx *DecryptContext) Open(aad, ct []byte) ([]byte, error) {
-	pt, err := ctx.aead.Open(nil, ctx.nonce, ct, aad)
+	pt, err := ctx.aead.Open(nil, ctx.makeNonce(), ct, aad)
 	if err != nil {
 		return nil, err
 	}
 
-	ctx.updateNonce()
 	return pt, nil
-}
-
-func (ctx DecryptContext) parameters() (setupParameters, contextParameters) {
-	return ctx.setupParams, ctx.contextParams
 }
 
 ///////
@@ -288,7 +291,7 @@ func SetupBaseI(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, info []byte
 		return nil, nil, err
 	}
 
-	ctx, err := newEncContext(suite, setupParams, params)
+	ctx, err := newEncryptContext(suite, setupParams, params)
 	return enc, ctx, err
 }
 
@@ -310,7 +313,7 @@ func SetupBaseR(suite CipherSuite, skR KEMPrivateKey, enc, info []byte) (*Decryp
 		return nil, err
 	}
 
-	return newDecContext(suite, setupParams, params)
+	return newDecryptContext(suite, setupParams, params)
 }
 
 //////
@@ -333,7 +336,7 @@ func SetupPSKI(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, psk, pskID, 
 		return nil, nil, err
 	}
 
-	ctx, err := newEncContext(suite, setupParams, params)
+	ctx, err := newEncryptContext(suite, setupParams, params)
 	return enc, ctx, err
 }
 
@@ -355,7 +358,7 @@ func SetupPSKR(suite CipherSuite, skR KEMPrivateKey, enc, psk, pskID, info []byt
 		return nil, err
 	}
 
-	return newDecContext(suite, setupParams, params)
+	return newDecryptContext(suite, setupParams, params)
 }
 
 ///////
@@ -380,7 +383,7 @@ func SetupAuthI(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, skI KEMPriv
 		return nil, nil, err
 	}
 
-	ctx, err := newEncContext(suite, setupParams, params)
+	ctx, err := newEncryptContext(suite, setupParams, params)
 	return enc, ctx, err
 }
 
@@ -404,7 +407,7 @@ func SetupAuthR(suite CipherSuite, skR KEMPrivateKey, pkI KEMPublicKey, enc, inf
 		return nil, err
 	}
 
-	return newDecContext(suite, setupParams, params)
+	return newDecryptContext(suite, setupParams, params)
 }
 
 /////////////
@@ -429,7 +432,7 @@ func SetupPSKAuthI(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, skI KEMP
 		return nil, nil, err
 	}
 
-	ctx, err := newEncContext(suite, setupParams, params)
+	ctx, err := newEncryptContext(suite, setupParams, params)
 	return enc, ctx, err
 }
 
@@ -453,5 +456,5 @@ func SetupPSKAuthR(suite CipherSuite, skR KEMPrivateKey, pkI KEMPublicKey, enc, 
 		return nil, err
 	}
 
-	return newDecContext(suite, setupParams, params)
+	return newDecryptContext(suite, setupParams, params)
 }

@@ -405,13 +405,13 @@ func verifyEncryptions(tv testVector, enc *EncryptContext, dec *DecryptContext) 
 	}
 }
 
-func verifyParameters(tv testVector, setupParams setupParameters, contextParams contextParameters) {
-	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'zz'", tv.zz, setupParams.zz)
-	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'enc'", tv.enc, setupParams.enc)
-	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'context'", tv.context, contextParams.context)
-	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'secret'", tv.secret, contextParams.secret)
-	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'key'", tv.key, contextParams.key)
-	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'nonce'", tv.nonce, contextParams.nonce)
+func verifyParameters(tv testVector, ctx cipherContext) {
+	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'zz'", tv.zz, ctx.setupParams.zz)
+	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'enc'", tv.enc, ctx.setupParams.enc)
+	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'context'", tv.context, ctx.contextParams.context)
+	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'secret'", tv.secret, ctx.contextParams.secret)
+	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'key'", tv.key, ctx.key)
+	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'nonce'", tv.nonce, ctx.nonce)
 }
 
 func verifyTestVector(tv testVector) {
@@ -424,11 +424,8 @@ func verifyTestVector(tv testVector) {
 	ctxR, err := setup.R(tv.suite, tv.skR, tv.enc, tv.info, tv.pkI, tv.psk, tv.pskID)
 	assertNotError(tv.t, tv.suite, "Error in SetupR", err)
 
-	setupParamsI, contextParamsI := ctxI.parameters()
-	verifyParameters(tv, setupParamsI, contextParamsI)
-
-	setupParamsR, contextParamsR := ctxR.parameters()
-	verifyParameters(tv, setupParamsR, contextParamsR)
+	verifyParameters(tv, ctxI.cipherContext)
+	verifyParameters(tv, ctxR.cipherContext)
 
 	verifyEncryptions(tv, ctxI, ctxR)
 }
@@ -494,12 +491,6 @@ func generateTestVector(t *testing.T, setup setupMode, kemID KEMID, kdfID KDFID,
 	ctxR, err := setup.R(suite, skR, enc, info, pkI, psk, pskID)
 	assertNotError(t, suite, "Error in SetupPSKR", err)
 
-	setupParams, contextParams := ctxI.parameters()
-	key := make([]byte, len(contextParams.key))
-	copy(key, contextParams.key)
-	nonce := make([]byte, len(contextParams.nonce))
-	copy(nonce, contextParams.nonce)
-
 	encryptionVectors, err := generateEncryptions(t, suite, ctxI, ctxR)
 	assertNotError(t, suite, "Error in generateEncryptions", err)
 
@@ -519,12 +510,12 @@ func generateTestVector(t *testing.T, setup setupMode, kemID KEMID, kdfID KDFID,
 		pkI:         pkI,
 		skE:         skE,
 		pkE:         pkE,
-		enc:         setupParams.enc,
-		zz:          setupParams.zz,
-		context:     contextParams.context,
-		secret:      contextParams.secret,
-		key:         key,
-		nonce:       nonce,
+		enc:         ctxI.setupParams.enc,
+		zz:          ctxI.setupParams.zz,
+		context:     ctxI.contextParams.context,
+		secret:      ctxI.contextParams.secret,
+		key:         ctxI.key,
+		nonce:       ctxI.nonce,
 		encryptions: encryptionVectors,
 	}
 
