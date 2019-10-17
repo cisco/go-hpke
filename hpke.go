@@ -56,10 +56,17 @@ type AEADScheme interface {
 	NonceSize() int
 }
 
+type MACScheme interface {
+	ID() MACID
+	Create(key, message []byte) []byte
+	KeySize() int
+}
+
 type CipherSuite struct {
 	KEM  KEMScheme
 	KDF  KDFScheme
 	AEAD AEADScheme
+	MAC  MACScheme
 }
 
 type HPKEMode uint8
@@ -132,6 +139,7 @@ type hpkeContext struct {
 	kemID     KEMID
 	kdfID     KDFID
 	aeadID    AEADID
+	macID     MACID
 	enc       []byte `tls:"head=none"`
 	pkRm      []byte `tls:"head=none"`
 	pkIm      []byte `tls:"head=none"`
@@ -155,6 +163,11 @@ func (cp contextParameters) aeadNonce() []byte {
 	return cp.suite.KDF.Expand(cp.secret, context, cp.suite.AEAD.NonceSize())
 }
 
+func (cp contextParameters) macKey() []byte {
+	context := append([]byte("hpke mac key"), cp.context...)
+	return cp.suite.KDF.Expand(cp.secret, context, cp.suite.MAC.KeySize())
+}
+
 type setupParameters struct {
 	zz  []byte
 	enc []byte
@@ -170,7 +183,7 @@ func keySchedule(suite CipherSuite, mode HPKEMode, pkR KEMPublicKey, zz, enc, in
 	pskIDHash := suite.KDF.Hash(pskID)
 	infoHash := suite.KDF.Hash(info)
 
-	contextStruct := hpkeContext{mode, suite.KEM.ID(), suite.KDF.ID(), suite.AEAD.ID(), enc, pkRm, pkIm, pskIDHash, infoHash}
+	contextStruct := hpkeContext{mode, suite.KEM.ID(), suite.KDF.ID(), suite.AEAD.ID(), suite.MAC.ID(), enc, pkRm, pkIm, pskIDHash, infoHash}
 	context, err := syntax.Marshal(contextStruct)
 	if err != nil {
 		return contextParameters{}, err
@@ -187,6 +200,31 @@ func keySchedule(suite CipherSuite, mode HPKEMode, pkR KEMPublicKey, zz, enc, in
 
 	return params, nil
 }
+
+///////
+// MAC contexts
+
+type MACContext struct {
+	key []byte
+
+	setupParams   setupParameters
+	contextParams contextParameters
+}
+
+func newMACContext(suite CipherSuite, setupParams setupParameters, contextParams contextParameters) *MACContext {
+	return &MACContext{
+		key:           contextParams.macKey(),
+		setupParams:   setupParams,
+		contextParams: contextParams,
+	}
+}
+
+func (ctx MACContext) Create(msg []byte) []byte {
+	return ctx.contextParams.suite.MAC.Create(ctx.key, msg)
+}
+
+///////
+// Encryption contexts
 
 type cipherContext struct {
 	key   []byte
@@ -410,6 +448,51 @@ func SetupAuthR(suite CipherSuite, skR KEMPrivateKey, pkI KEMPublicKey, enc, inf
 	return newDecryptContext(suite, setupParams, params)
 }
 
+func SetupAuthMACI(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, skI KEMPrivateKey, info []byte) ([]byte, *MACContext, error) {
+	// zz, enc = AuthEncap(pkR, skI)
+	auth := suite.KEM.(AuthKEMScheme)
+	zz, enc, err := auth.AuthEncap(rand, pkR, skI)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	setupParams := setupParameters{
+		zz:  zz,
+		enc: enc,
+	}
+
+	pkIm := suite.KEM.Marshal(skI.PublicKey())
+	params, err := keySchedule(suite, modeAuth, pkR, zz, enc, info, defaultPSK(suite), defaultPSKID(suite), pkIm)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return enc, newMACContext(suite, setupParams, params), nil
+}
+
+func SetupAuthMACR(suite CipherSuite, skR KEMPrivateKey, pkI KEMPublicKey, enc, info []byte) (*MACContext, error) {
+	// zz = AuthDecap(enc, skR, pkI)
+	auth := suite.KEM.(AuthKEMScheme)
+	zz, err := auth.AuthDecap(enc, skR, pkI)
+	if err != nil {
+		return nil, err
+	}
+
+	setupParams := setupParameters{
+		zz:  zz,
+		enc: enc,
+	}
+
+	pkIm := suite.KEM.Marshal(pkI)
+	pkR := skR.PublicKey()
+	params, err := keySchedule(suite, modeAuth, pkR, zz, enc, info, defaultPSK(suite), defaultPSKID(suite), pkIm)
+	if err != nil {
+		return nil, err
+	}
+
+	return newMACContext(suite, setupParams, params), nil
+}
+
 /////////////
 // PSK + Auth
 
@@ -457,4 +540,49 @@ func SetupPSKAuthR(suite CipherSuite, skR KEMPrivateKey, pkI KEMPublicKey, enc, 
 	}
 
 	return newDecryptContext(suite, setupParams, params)
+}
+
+func SetupPSKAuthMACI(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, skI KEMPrivateKey, psk, pskID, info []byte) ([]byte, *MACContext, error) {
+	// zz, enc = AuthEncap(pkR, skI)
+	auth := suite.KEM.(AuthKEMScheme)
+	zz, enc, err := auth.AuthEncap(rand, pkR, skI)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	setupParams := setupParameters{
+		zz:  zz,
+		enc: enc,
+	}
+
+	pkIm := suite.KEM.Marshal(skI.PublicKey())
+	params, err := keySchedule(suite, modePSKAuth, pkR, zz, enc, info, psk, pskID, pkIm)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return enc, newMACContext(suite, setupParams, params), nil
+}
+
+func SetupPSKAuthMACR(suite CipherSuite, skR KEMPrivateKey, pkI KEMPublicKey, enc, psk, pskID, info []byte) (*MACContext, error) {
+	// zz = AuthDecap(enc, skR, pkI)
+	auth := suite.KEM.(AuthKEMScheme)
+	zz, err := auth.AuthDecap(enc, skR, pkI)
+	if err != nil {
+		return nil, err
+	}
+
+	setupParams := setupParameters{
+		zz:  zz,
+		enc: enc,
+	}
+
+	pkIm := suite.KEM.Marshal(pkI)
+	pkR := skR.PublicKey()
+	params, err := keySchedule(suite, modePSKAuth, pkR, zz, enc, info, psk, pskID, pkIm)
+	if err != nil {
+		return nil, err
+	}
+
+	return newMACContext(suite, setupParams, params), nil
 }

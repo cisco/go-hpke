@@ -233,7 +233,7 @@ func (tv *testVector) UnmarshalJSON(data []byte) error {
 	tv.aeadID = raw.AEADID
 	tv.info = mustUnhex(tv.t, raw.Info)
 
-	tv.suite, err = AssembleCipherSuite(raw.KEMID, raw.KDFID, raw.AEADID)
+	tv.suite, err = AssembleCipherSuite(raw.KEMID, raw.KDFID, raw.AEADID, MAC_NONE)
 	if err != nil {
 		return err
 	}
@@ -289,6 +289,8 @@ type setupMode struct {
 	OK   func(suite CipherSuite) bool
 	I    func(suite CipherSuite, pkR KEMPublicKey, info []byte, skI KEMPrivateKey, psk, pskID []byte) ([]byte, *EncryptContext, error)
 	R    func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkI KEMPublicKey, psk, pskID []byte) (*DecryptContext, error)
+	Im   func(suite CipherSuite, pkR KEMPublicKey, info []byte, skI KEMPrivateKey, psk, pskID []byte) ([]byte, *MACContext, error)
+	Rm   func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkI KEMPublicKey, psk, pskID []byte) (*MACContext, error)
 }
 
 var setupModes = map[HPKEMode]setupMode{
@@ -324,6 +326,12 @@ var setupModes = map[HPKEMode]setupMode{
 		R: func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkI KEMPublicKey, psk, pskID []byte) (*DecryptContext, error) {
 			return SetupAuthR(suite, skR, pkI, enc, info)
 		},
+		Im: func(suite CipherSuite, pkR KEMPublicKey, info []byte, skI KEMPrivateKey, psk, pskID []byte) ([]byte, *MACContext, error) {
+			return SetupAuthMACI(suite, rand.Reader, pkR, skI, info)
+		},
+		Rm: func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkI KEMPublicKey, psk, pskID []byte) (*MACContext, error) {
+			return SetupAuthMACR(suite, skR, pkI, enc, info)
+		},
 	},
 	modePSKAuth: {
 		Mode: modePSKAuth,
@@ -336,6 +344,12 @@ var setupModes = map[HPKEMode]setupMode{
 		},
 		R: func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkI KEMPublicKey, psk, pskID []byte) (*DecryptContext, error) {
 			return SetupPSKAuthR(suite, skR, pkI, enc, psk, pskID, info)
+		},
+		Im: func(suite CipherSuite, pkR KEMPublicKey, info []byte, skI KEMPrivateKey, psk, pskID []byte) ([]byte, *MACContext, error) {
+			return SetupPSKAuthMACI(suite, rand.Reader, pkR, skI, psk, pskID, info)
+		},
+		Rm: func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkI KEMPublicKey, psk, pskID []byte) (*MACContext, error) {
+			return SetupPSKAuthMACR(suite, skR, pkI, enc, psk, pskID, info)
 		},
 	},
 }
@@ -351,7 +365,7 @@ type roundTripTest struct {
 }
 
 func (rtt roundTripTest) Test(t *testing.T) {
-	suite, err := AssembleCipherSuite(rtt.kemID, rtt.kdfID, rtt.aeadID)
+	suite, err := AssembleCipherSuite(rtt.kemID, rtt.kdfID, rtt.aeadID, MAC_NONE)
 	if err != nil {
 		t.Fatalf("[%04x, %04x, %04x] Error looking up ciphersuite: %v", rtt.kemID, rtt.kdfID, rtt.aeadID, err)
 	}
@@ -385,6 +399,55 @@ func TestModes(t *testing.T) {
 					label := fmt.Sprintf("kem=%04x/kdf=%04x/aead=%04x/mode=%02x", kemID, kdfID, aeadID, mode)
 					rtt := roundTripTest{kemID, kdfID, aeadID, setup}
 					t.Run(label, rtt.Test)
+				}
+			}
+		}
+	}
+}
+
+///////
+// Direct tests
+
+type macTest struct {
+	kemID KEMID
+	kdfID KDFID
+	macID MACID
+	setup setupMode
+}
+
+func (mact macTest) Test(t *testing.T) {
+	suite, err := AssembleCipherSuite(mact.kemID, mact.kdfID, AEAD_NONE, mact.macID)
+	if err != nil {
+		t.Fatalf("[%04x, %04x, %04x] Error looking up ciphersuite: %v", mact.kemID, mact.kdfID, mact.macID, err)
+	}
+
+	if !mact.setup.OK(suite) {
+		return
+	}
+
+	skI, pkI := mustGenerateKeyPair(t, suite)
+	skR, pkR := mustGenerateKeyPair(t, suite)
+
+	enc, ctxI, err := mact.setup.Im(suite, pkR, info, skI, psk, pskID)
+	assertNotError(t, suite, "Error in SetupIm", err)
+
+	ctxR, err := mact.setup.Rm(suite, skR, enc, info, pkI, psk, pskID)
+	assertNotError(t, suite, "Error in SetupRm", err)
+
+	macI := ctxI.Create(original)
+	macR := ctxR.Create(original)
+	assertBytesEqual(t, suite, "Mismatched MAC values", macI, macR)
+}
+
+func TestMAC(t *testing.T) {
+	for kemID, _ := range kems {
+		for kdfID, _ := range kdfs {
+			for macID, _ := range macs {
+				for _, mode := range []HPKEMode{modeAuth, modePSKAuth} {
+					setup := setupModes[mode]
+					label := fmt.Sprintf("kem=%04x/kdf=%04x/mac=%04x/mode=%02x", kemID, kdfID, macID, mode)
+					mact := macTest{kemID, kdfID, macID, setup}
+					t.Run(label, mact.Test)
 				}
 			}
 		}
@@ -474,7 +537,7 @@ func generateEncryptions(t *testing.T, suite CipherSuite, ctxI *EncryptContext, 
 }
 
 func generateTestVector(t *testing.T, setup setupMode, kemID KEMID, kdfID KDFID, aeadID AEADID) testVector {
-	suite, err := AssembleCipherSuite(kemID, kdfID, aeadID)
+	suite, err := AssembleCipherSuite(kemID, kdfID, aeadID, MAC_NONE)
 	if err != nil {
 		t.Fatalf("[%x, %x, %x] Error looking up ciphersuite: %s", kemID, kdfID, aeadID, err)
 	}

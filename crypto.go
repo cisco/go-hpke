@@ -703,6 +703,57 @@ func (s hkdfScheme) OutputSize() int {
 	return s.hash.Size()
 }
 
+///////
+// HMAC
+
+type hmacScheme struct {
+	hash crypto.Hash
+}
+
+func (s hmacScheme) ID() MACID {
+	switch s.hash {
+	case crypto.SHA256:
+		return MAC_HMAC_SHA256
+	case crypto.SHA512:
+		return MAC_HMAC_SHA512
+	}
+
+	panic("Unknown hash function")
+}
+
+func (s hmacScheme) Create(key, message []byte) []byte {
+	h := hmac.New(s.hash.New, key)
+	h.Write(message)
+	return h.Sum(nil)
+}
+
+func (s hmacScheme) KeySize() int {
+	switch s.hash {
+	case crypto.SHA256:
+		return 64
+	case crypto.SHA512:
+		return 128
+	}
+
+	panic("Unknown hash function")
+}
+
+///////
+// Null AEAD and MAC schemes
+
+type nullMACScheme struct{}
+
+func (s nullMACScheme) ID() MACID                         { return MAC_NONE }
+func (s nullMACScheme) Create(key, message []byte) []byte { return nil }
+func (s nullMACScheme) KeySize() int                      { return 0 }
+
+type nullAEADScheme struct{}
+
+func (s nullAEADScheme) ID() AEADID                          { return AEAD_NONE }
+func (s nullAEADScheme) New(key []byte) (cipher.AEAD, error) { return nil, fmt.Errorf("Invalid AEAD") }
+func (s nullAEADScheme) KeySize() int                        { return 0 }
+func (s nullAEADScheme) NonceSize() int                      { return 0 }
+
 ///////////////////////////
 // Pre-defined KEM identifiers
 
@@ -766,18 +817,40 @@ var kdfs = map[KDFID]KDFScheme{
 type AEADID uint16
 
 const (
+	AEAD_NONE             AEADID = 0x0000
 	AEAD_AESGCM128        AEADID = 0x0001
 	AEAD_AESGCM256        AEADID = 0x0002
 	AEAD_CHACHA20POLY1305 AEADID = 0x0003
 )
 
 var aeads = map[AEADID]AEADScheme{
+	AEAD_NONE:             nullAEADScheme{},
 	AEAD_AESGCM128:        aesgcmScheme{keySize: 16},
 	AEAD_AESGCM256:        aesgcmScheme{keySize: 32},
 	AEAD_CHACHA20POLY1305: chachaPolyScheme{},
 }
 
-func AssembleCipherSuite(kemID KEMID, kdfID KDFID, aeadID AEADID) (CipherSuite, error) {
+///////
+// Pre-defined MAC identifiers
+
+type MACID uint16
+
+const (
+	MAC_NONE              = 0x0000
+	MAC_HMAC_SHA256 MACID = 0x0001
+	MAC_HMAC_SHA512 MACID = 0x0002
+)
+
+var macs = map[MACID]MACScheme{
+	MAC_NONE:        nullMACScheme{},
+	MAC_HMAC_SHA256: hmacScheme{hash: crypto.SHA256},
+	MAC_HMAC_SHA512: hmacScheme{hash: crypto.SHA512},
+}
+
+///////
+// Ciphersuite assembly
+
+func AssembleCipherSuite(kemID KEMID, kdfID KDFID, aeadID AEADID, macID MACID) (CipherSuite, error) {
 	kem, ok := newKEMScheme(kemID)
 	if !ok {
 		return CipherSuite{}, fmt.Errorf("Unknown KEM id")
@@ -793,9 +866,15 @@ func AssembleCipherSuite(kemID KEMID, kdfID KDFID, aeadID AEADID) (CipherSuite, 
 		return CipherSuite{}, fmt.Errorf("Unknown AEAD id")
 	}
 
+	mac, ok := macs[macID]
+	if !ok {
+		return CipherSuite{}, fmt.Errorf("Unknown MAC id")
+	}
+
 	return CipherSuite{
 		KEM:  kem,
 		KDF:  kdf,
 		AEAD: aead,
+		MAC:  mac,
 	}, nil
 }

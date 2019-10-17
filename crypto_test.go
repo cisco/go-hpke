@@ -2,7 +2,9 @@ package hpke
 
 import (
 	"bytes"
+	"crypto"
 	"crypto/elliptic"
+	"crypto/hmac"
 	"crypto/rand"
 	"testing"
 
@@ -132,6 +134,27 @@ func TestAEADSchemes(t *testing.T) {
 
 		if bytes.Equal(ctWithAAD, ctWithoutAAD) {
 			t.Fatalf("[%d] AAD not included in ciphertext", i)
+		}
+	}
+}
+
+func TestMACSchemes(t *testing.T) {
+	schemes := []MACScheme{
+		hmacScheme{hash: crypto.SHA256},
+		hmacScheme{hash: crypto.SHA512},
+	}
+
+	for i, s := range schemes {
+		key := randomBytes(s.KeySize())
+		msg := randomBytes(1024)
+
+		h := hmac.New(s.(hmacScheme).hash.New, key)
+		h.Write(msg)
+		mac1 := h.Sum(nil)
+		mac2 := s.Create(key, msg)
+
+		if !bytes.Equal(mac1, mac2) {
+			t.Fatalf("[%d] Incorrect MAC value [%x] != [%x]", i, mac2, mac2)
 		}
 	}
 }
