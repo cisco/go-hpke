@@ -232,6 +232,8 @@ type cipherContext struct {
 	aead  cipher.AEAD
 	seq   uint64
 
+	// Historical record
+	nonces        [][]byte
 	setupParams   setupParameters
 	contextParams contextParameters
 }
@@ -245,7 +247,7 @@ func newCipherContext(suite CipherSuite, setupParams setupParameters, contextPar
 		return cipherContext{}, err
 	}
 
-	return cipherContext{key, nonce, aead, 0, setupParams, contextParams}, nil
+	return cipherContext{key, nonce, aead, 0, nil, setupParams, contextParams}, nil
 }
 
 func (ctx *cipherContext) makeNonce() []byte {
@@ -264,6 +266,7 @@ func (ctx *cipherContext) makeNonce() []byte {
 		nonce[Nn-8+i] ^= buf[i]
 	}
 
+	ctx.nonces = append(ctx.nonces, nonce)
 	return nonce
 }
 
