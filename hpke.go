@@ -26,11 +26,13 @@ type KEMScheme interface {
 	GenerateKeyPair(rand io.Reader) (KEMPrivateKey, KEMPublicKey, error)
 	Marshal(pk KEMPublicKey) []byte
 	Unmarshal(enc []byte) (KEMPublicKey, error)
-	marshalPrivate(sk KEMPrivateKey) []byte
-	unmarshalPrivate(enc []byte) (KEMPrivateKey, error)
 	Encap(rand io.Reader, pkR KEMPublicKey) ([]byte, []byte, error)
 	Decap(enc []byte, skR KEMPrivateKey) ([]byte, error)
 	PublicKeySize() int
+
+	marshalPrivate(sk KEMPrivateKey) []byte
+	unmarshalPrivate(enc []byte) (KEMPrivateKey, error)
+	setEphemeralKeyPair(sk KEMPrivateKey)
 }
 
 type AuthKEMScheme interface {
