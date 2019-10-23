@@ -100,6 +100,7 @@ func assertBytesEqual(t *testing.T, suite CipherSuite, msg string, lhs, rhs []by
 type encryptionTestVector struct {
 	plaintext  []byte
 	aad        []byte
+	nonce      []byte
 	ciphertext []byte
 }
 
@@ -107,6 +108,7 @@ func (etv encryptionTestVector) MarshalJSON() ([]byte, error) {
 	return json.Marshal(map[string]string{
 		"plaintext":  mustHex(etv.plaintext),
 		"aad":        mustHex(etv.aad),
+		"nonce":      mustHex(etv.nonce),
 		"ciphertext": mustHex(etv.ciphertext),
 	})
 }
@@ -120,6 +122,7 @@ func (etv *encryptionTestVector) UnmarshalJSON(data []byte) error {
 
 	etv.plaintext = mustUnhex(nil, raw["plaintext"])
 	etv.aad = mustUnhex(nil, raw["aad"])
+	etv.nonce = mustUnhex(nil, raw["nonce"])
 	etv.ciphertext = mustUnhex(nil, raw["ciphertext"])
 	return nil
 }
@@ -466,6 +469,7 @@ func generateEncryptions(t *testing.T, suite CipherSuite, ctxI *EncryptContext, 
 		vectors[i] = encryptionTestVector{
 			plaintext:  original,
 			aad:        aad,
+			nonce:      ctxI.nonces[i],
 			ciphertext: encrypted,
 		}
 	}
