@@ -213,11 +213,6 @@ func newCipherContext(suite CipherSuite, setupParams setupParameters, contextPar
 }
 
 func (ctx *cipherContext) makeNonce() []byte {
-	ctx.seq += 1
-	if ctx.seq == 0 {
-		panic("sequence number wrapped")
-	}
-
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, ctx.seq)
 
@@ -229,6 +224,13 @@ func (ctx *cipherContext) makeNonce() []byte {
 	}
 
 	ctx.nonces = append(ctx.nonces, nonce)
+
+	// Increment the sequence number *after* we make a nonce
+	ctx.seq += 1
+	if ctx.seq == 0 {
+		panic("sequence number wrapped")
+	}
+
 	return nonce
 }
 
