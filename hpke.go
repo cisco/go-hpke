@@ -150,6 +150,11 @@ func (cp contextParameters) aeadKey() []byte {
 	return cp.suite.KDF.Expand(cp.secret, context, cp.suite.AEAD.KeySize())
 }
 
+func (cp contextParameters) exporterSecret() []byte {
+	context := append([]byte("hpke exp"), cp.context...)
+	return cp.suite.KDF.Expand(cp.secret, context, cp.suite.AEAD.KeySize())
+}
+
 func (cp contextParameters) aeadNonce() []byte {
 	context := append([]byte("hpke nonce"), cp.context...)
 	return cp.suite.KDF.Expand(cp.secret, context, cp.suite.AEAD.NonceSize())
@@ -189,10 +194,12 @@ func keySchedule(suite CipherSuite, mode HPKEMode, pkR KEMPublicKey, zz, enc, in
 }
 
 type cipherContext struct {
-	key   []byte
-	nonce []byte
-	aead  cipher.AEAD
-	seq   uint64
+	key            []byte
+	nonce          []byte
+	exporterSecret []byte
+	aead           cipher.AEAD
+	seq            uint64
+	kdf            KDFScheme
 
 	// Historical record
 	nonces        [][]byte
@@ -203,13 +210,14 @@ type cipherContext struct {
 func newCipherContext(suite CipherSuite, setupParams setupParameters, contextParams contextParameters) (cipherContext, error) {
 	key := contextParams.aeadKey()
 	nonce := contextParams.aeadNonce()
+	exporterSecrert := contextParams.exporterSecret()
 
 	aead, err := suite.AEAD.New(key)
 	if err != nil {
 		return cipherContext{}, err
 	}
 
-	return cipherContext{key, nonce, aead, 0, nil, setupParams, contextParams}, nil
+	return cipherContext{key, nonce, exporterSecrert, aead, 0, suite.KDF, nil, setupParams, contextParams}, nil
 }
 
 func (ctx *cipherContext) makeNonce() []byte {
@@ -252,6 +260,10 @@ func (ctx *EncryptContext) Seal(aad, pt []byte) []byte {
 	return ct
 }
 
+func (ctx *EncryptContext) Export(context []byte, L int) []byte {
+	return ctx.kdf.Expand(ctx.exporterSecret, context, L)
+}
+
 type DecryptContext struct {
 	cipherContext
 }
@@ -272,6 +284,10 @@ func (ctx *DecryptContext) Open(aad, ct []byte) ([]byte, error) {
 	}
 
 	return pt, nil
+}
+
+func (ctx *DecryptContext) Export(context []byte, L int) []byte {
+	return ctx.kdf.Expand(ctx.exporterSecret, context, L)
 }
 
 ///////

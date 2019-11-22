@@ -12,12 +12,14 @@ import (
 )
 
 var (
-	psk      = []byte("mellon")
-	pskID    = []byte("Ennyn Durin aran Moria")
-	original = []byte("Beauty is truth, truth beauty")
-	aad      = []byte("that is all // Ye know on earth, and all ye need to know")
-	info     = []byte("Ode on a Grecian Urn")
-	rtts     = 10
+	psk           = []byte("mellon")
+	pskID         = []byte("Ennyn Durin aran Moria")
+	original      = []byte("Beauty is truth, truth beauty")
+	aad           = []byte("that is all // Ye know on earth, and all ye need to know")
+	info          = []byte("Ode on a Grecian Urn")
+	rtts          = 10
+	exportContext = []byte("test export")
+	exportLength  = 32
 )
 
 const (
@@ -150,12 +152,13 @@ type rawTestVector struct {
 	PKE string `json:"pkE"`
 
 	// Key schedule inputs and computations
-	Enc     string `json:"enc"`
-	Zz      string `json:"zz"`
-	Context string `json:"context"`
-	Secret  string `json:"secret"`
-	Key     string `json:"key"`
-	Nonce   string `json:"nonce"`
+	Enc            string `json:"enc"`
+	Zz             string `json:"zz"`
+	Context        string `json:"context"`
+	Secret         string `json:"secret"`
+	Key            string `json:"key"`
+	Nonce          string `json:"nonce"`
+	ExporterSecret string `json:"exporterSecret"`
 
 	Encryptions []encryptionTestVector `json:"encryptions"`
 }
@@ -184,12 +187,13 @@ type testVector struct {
 	pkE KEMPublicKey
 
 	// Key schedule inputs and computations
-	enc     []byte
-	zz      []byte
-	context []byte
-	secret  []byte
-	key     []byte
-	nonce   []byte
+	enc            []byte
+	zz             []byte
+	context        []byte
+	secret         []byte
+	key            []byte
+	nonce          []byte
+	exporterSecret []byte
 
 	encryptions []encryptionTestVector
 }
@@ -212,12 +216,13 @@ func (tv testVector) MarshalJSON() ([]byte, error) {
 		PKI: mustMarshalPub(tv.suite, tv.pkI),
 		PKE: mustMarshalPub(tv.suite, tv.pkE),
 
-		Enc:     mustHex(tv.enc),
-		Zz:      mustHex(tv.zz),
-		Context: mustHex(tv.context),
-		Secret:  mustHex(tv.secret),
-		Key:     mustHex(tv.key),
-		Nonce:   mustHex(tv.nonce),
+		Enc:            mustHex(tv.enc),
+		Zz:             mustHex(tv.zz),
+		Context:        mustHex(tv.context),
+		Secret:         mustHex(tv.secret),
+		Key:            mustHex(tv.key),
+		Nonce:          mustHex(tv.nonce),
+		ExporterSecret: mustHex(tv.exporterSecret),
 
 		Encryptions: tv.encryptions,
 	})
@@ -259,6 +264,7 @@ func (tv *testVector) UnmarshalJSON(data []byte) error {
 	tv.secret = mustUnhex(tv.t, raw.Secret)
 	tv.key = mustUnhex(tv.t, raw.Key)
 	tv.nonce = mustUnhex(tv.t, raw.Nonce)
+	tv.exporterSecret = mustUnhex(tv.t, raw.ExporterSecret)
 
 	tv.encryptions = raw.Encryptions
 	return nil
@@ -372,12 +378,18 @@ func (rtt roundTripTest) Test(t *testing.T) {
 	ctxR, err := rtt.setup.R(suite, skR, enc, info, pkI, psk, pskID)
 	assertNotError(t, suite, "Error in SetupR", err)
 
+	// Verify encryption functionality
 	for range make([]struct{}, rtts) {
 		encrypted := ctxI.Seal(aad, original)
 		decrypted, err := ctxR.Open(aad, encrypted)
 		assertNotError(t, suite, "Error in Open", err)
 		assertBytesEqual(t, suite, "Incorrect decryption", decrypted, original)
 	}
+
+	// Verify exporter functionality
+	exportedI := ctxI.Export(exportContext, exportLength)
+	exportedR := ctxR.Export(exportContext, exportLength)
+	assertBytesEqual(t, suite, "Incorrect exported secret", exportedI, exportedR)
 }
 
 func TestModes(t *testing.T) {
@@ -415,6 +427,7 @@ func verifyParameters(tv testVector, ctx cipherContext) {
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'secret'", tv.secret, ctx.contextParams.secret)
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'key'", tv.key, ctx.key)
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'nonce'", tv.nonce, ctx.nonce)
+	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'exporterSecret'", tv.exporterSecret, ctx.exporterSecret)
 }
 
 func verifyTestVector(tv testVector) {
@@ -499,28 +512,29 @@ func generateTestVector(t *testing.T, setup setupMode, kemID KEMID, kdfID KDFID,
 	assertNotError(t, suite, "Error in generateEncryptions", err)
 
 	vector := testVector{
-		t:           t,
-		suite:       suite,
-		mode:        setup.Mode,
-		kemID:       kemID,
-		kdfID:       kdfID,
-		aeadID:      aeadID,
-		info:        info,
-		skR:         skR,
-		pkR:         pkR,
-		skI:         skI,
-		psk:         psk,
-		pskID:       pskID,
-		pkI:         pkI,
-		skE:         skE,
-		pkE:         pkE,
-		enc:         ctxI.setupParams.enc,
-		zz:          ctxI.setupParams.zz,
-		context:     ctxI.contextParams.context,
-		secret:      ctxI.contextParams.secret,
-		key:         ctxI.key,
-		nonce:       ctxI.nonce,
-		encryptions: encryptionVectors,
+		t:              t,
+		suite:          suite,
+		mode:           setup.Mode,
+		kemID:          kemID,
+		kdfID:          kdfID,
+		aeadID:         aeadID,
+		info:           info,
+		skR:            skR,
+		pkR:            pkR,
+		skI:            skI,
+		psk:            psk,
+		pskID:          pskID,
+		pkI:            pkI,
+		skE:            skE,
+		pkE:            pkE,
+		enc:            ctxI.setupParams.enc,
+		zz:             ctxI.setupParams.zz,
+		context:        ctxI.contextParams.context,
+		secret:         ctxI.contextParams.secret,
+		key:            ctxI.key,
+		nonce:          ctxI.nonce,
+		exporterSecret: ctxI.exporterSecret,
+		encryptions:    encryptionVectors,
 	}
 
 	return vector
