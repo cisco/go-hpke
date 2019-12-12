@@ -30,8 +30,9 @@ type KEMScheme interface {
 	Decap(enc []byte, skR KEMPrivateKey) ([]byte, error)
 	PublicKeySize() int
 
-	marshalPrivate(sk KEMPrivateKey) []byte
-	unmarshalPrivate(enc []byte) (KEMPrivateKey, error)
+	MarshalPrivate(sk KEMPrivateKey) []byte
+	UnmarshalPrivate(enc []byte) (KEMPrivateKey, error)
+
 	setEphemeralKeyPair(sk KEMPrivateKey)
 }
 
