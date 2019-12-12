@@ -30,8 +30,8 @@ type dhScheme interface {
 	DH(priv KEMPrivateKey, pub KEMPublicKey) ([]byte, error)
 	PublicKeySize() int
 
-	marshalPrivate(sk KEMPrivateKey) []byte
-	unmarshalPrivate(enc []byte) (KEMPrivateKey, error)
+	MarshalPrivate(sk KEMPrivateKey) []byte
+	UnmarshalPrivate(enc []byte) (KEMPrivateKey, error)
 }
 
 type dhkemScheme struct {
@@ -51,16 +51,16 @@ func (s dhkemScheme) Marshal(pk KEMPublicKey) []byte {
 	return s.group.Marshal(pk)
 }
 
-func (s dhkemScheme) marshalPrivate(sk KEMPrivateKey) []byte {
-	return s.group.marshalPrivate(sk)
+func (s dhkemScheme) MarshalPrivate(sk KEMPrivateKey) []byte {
+	return s.group.MarshalPrivate(sk)
 }
 
 func (s dhkemScheme) Unmarshal(enc []byte) (KEMPublicKey, error) {
 	return s.group.Unmarshal(enc)
 }
 
-func (s dhkemScheme) unmarshalPrivate(enc []byte) (KEMPrivateKey, error) {
-	return s.group.unmarshalPrivate(enc)
+func (s dhkemScheme) UnmarshalPrivate(enc []byte) (KEMPrivateKey, error) {
+	return s.group.UnmarshalPrivate(enc)
 }
 
 func (s *dhkemScheme) setEphemeralKeyPair(skE KEMPrivateKey) {
@@ -198,7 +198,7 @@ func (s ecdhScheme) Marshal(pk KEMPublicKey) []byte {
 	return elliptic.Marshal(raw.curve, raw.x, raw.y)
 }
 
-func (s ecdhScheme) marshalPrivate(sk KEMPrivateKey) []byte {
+func (s ecdhScheme) MarshalPrivate(sk KEMPrivateKey) []byte {
 	if sk == nil {
 		return nil
 	}
@@ -218,7 +218,7 @@ func (s ecdhScheme) Unmarshal(enc []byte) (KEMPublicKey, error) {
 	return &ecdhPublicKey{s.curve, x, y}, nil
 }
 
-func (s ecdhScheme) unmarshalPrivate(enc []byte) (KEMPrivateKey, error) {
+func (s ecdhScheme) UnmarshalPrivate(enc []byte) (KEMPrivateKey, error) {
 	if enc == nil {
 		return nil, fmt.Errorf("Invalid input")
 	}
@@ -296,7 +296,7 @@ func (s x25519Scheme) Marshal(pk KEMPublicKey) []byte {
 	return raw.val[:]
 }
 
-func (s x25519Scheme) marshalPrivate(sk KEMPrivateKey) []byte {
+func (s x25519Scheme) MarshalPrivate(sk KEMPrivateKey) []byte {
 	if sk == nil {
 		return nil
 	}
@@ -314,7 +314,7 @@ func (s x25519Scheme) Unmarshal(enc []byte) (KEMPublicKey, error) {
 	return pub, nil
 }
 
-func (s x25519Scheme) unmarshalPrivate(enc []byte) (KEMPrivateKey, error) {
+func (s x25519Scheme) UnmarshalPrivate(enc []byte) (KEMPrivateKey, error) {
 	if enc == nil {
 		return nil, fmt.Errorf("Invalid input")
 	}
@@ -392,7 +392,7 @@ func (s x448Scheme) Marshal(pk KEMPublicKey) []byte {
 	return raw.val[:]
 }
 
-func (s x448Scheme) marshalPrivate(sk KEMPrivateKey) []byte {
+func (s x448Scheme) MarshalPrivate(sk KEMPrivateKey) []byte {
 	if sk == nil {
 		return nil
 	}
@@ -410,7 +410,7 @@ func (s x448Scheme) Unmarshal(enc []byte) (KEMPublicKey, error) {
 	return pub, nil
 }
 
-func (s x448Scheme) unmarshalPrivate(enc []byte) (KEMPrivateKey, error) {
+func (s x448Scheme) UnmarshalPrivate(enc []byte) (KEMPrivateKey, error) {
 	if enc == nil {
 		return nil, fmt.Errorf("Invalid input")
 	}
@@ -500,7 +500,7 @@ func (s sikeScheme) Marshal(pk KEMPublicKey) []byte {
 	return out
 }
 
-func (s sikeScheme) marshalPrivate(sk KEMPrivateKey) []byte {
+func (s sikeScheme) MarshalPrivate(sk KEMPrivateKey) []byte {
 	panic("Not implemented")
 	return nil
 }
@@ -519,7 +519,7 @@ func (s sikeScheme) Unmarshal(enc []byte) (KEMPublicKey, error) {
 	return &sikePublicKey{s.field, rawPub}, nil
 }
 
-func (s sikeScheme) unmarshalPrivate(enc []byte) (KEMPrivateKey, error) {
+func (s sikeScheme) UnmarshalPrivate(enc []byte) (KEMPrivateKey, error) {
 	panic("Not implemented")
 	return nil, nil
 }
