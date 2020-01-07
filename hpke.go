@@ -213,7 +213,7 @@ func newCipherContext(suite CipherSuite, setupParams setupParameters, contextPar
 	return cipherContext{key, nonce, aead, 0, nil, setupParams, contextParams}, nil
 }
 
-func (ctx *cipherContext) makeNonce() []byte {
+func (ctx *cipherContext) currNonce() []byte {
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, ctx.seq)
 
@@ -225,14 +225,14 @@ func (ctx *cipherContext) makeNonce() []byte {
 	}
 
 	ctx.nonces = append(ctx.nonces, nonce)
+	return nonce
+}
 
-	// Increment the sequence number *after* we make a nonce
+func (ctx *cipherContext) incrementSeq() {
 	ctx.seq += 1
 	if ctx.seq == 0 {
 		panic("sequence number wrapped")
 	}
-
-	return nonce
 }
 
 type EncryptContext struct {
@@ -249,7 +249,8 @@ func newEncryptContext(suite CipherSuite, setupParams setupParameters, contextPa
 }
 
 func (ctx *EncryptContext) Seal(aad, pt []byte) []byte {
-	ct := ctx.aead.Seal(nil, ctx.makeNonce(), pt, aad)
+	ct := ctx.aead.Seal(nil, ctx.currNonce(), pt, aad)
+	ctx.incrementSeq()
 	return ct
 }
 
@@ -267,11 +268,12 @@ func newDecryptContext(suite CipherSuite, setupParams setupParameters, contextPa
 }
 
 func (ctx *DecryptContext) Open(aad, ct []byte) ([]byte, error) {
-	pt, err := ctx.aead.Open(nil, ctx.makeNonce(), ct, aad)
+	pt, err := ctx.aead.Open(nil, ctx.currNonce(), ct, aad)
 	if err != nil {
 		return nil, err
 	}
 
+	ctx.incrementSeq()
 	return pt, nil
 }
 
