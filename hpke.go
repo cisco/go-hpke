@@ -242,6 +242,10 @@ func (ctx *cipherContext) makeNonce() []byte {
 	return nonce
 }
 
+func (ctx *cipherContext) Export(context []byte, L int) []byte {
+	return ctx.kdf.Expand(ctx.exporterSecret, context, L)
+}
+
 type EncryptContext struct {
 	cipherContext
 }
@@ -258,10 +262,6 @@ func newEncryptContext(suite CipherSuite, setupParams setupParameters, contextPa
 func (ctx *EncryptContext) Seal(aad, pt []byte) []byte {
 	ct := ctx.aead.Seal(nil, ctx.makeNonce(), pt, aad)
 	return ct
-}
-
-func (ctx *EncryptContext) Export(context []byte, L int) []byte {
-	return ctx.kdf.Expand(ctx.exporterSecret, context, L)
 }
 
 type DecryptContext struct {

@@ -26,6 +26,8 @@ const (
 	outputTestVectorEnvironmentKey = "HPKE_TEST_VECTORS_OUT"
 	inputTestVectorEnvironmentKey  = "HPKE_TEST_VECTORS_IN"
 	testVectorEncryptionCount      = 10
+	testVectorExportCount          = 5
+	testVectorExportLength         = 32
 )
 
 ///////
@@ -98,7 +100,7 @@ func assertBytesEqual(t *testing.T, suite CipherSuite, msg string, lhs, rhs []by
 }
 
 ///////
-// Symmetric encryption test vector structures
+// Symmetric encryption test vector structure
 type encryptionTestVector struct {
 	plaintext  []byte
 	aad        []byte
@@ -126,6 +128,41 @@ func (etv *encryptionTestVector) UnmarshalJSON(data []byte) error {
 	etv.aad = mustUnhex(nil, raw["aad"])
 	etv.nonce = mustUnhex(nil, raw["nonce"])
 	etv.ciphertext = mustUnhex(nil, raw["ciphertext"])
+	return nil
+}
+
+///////
+// Exporter test vector structures
+type rawExporterTestVector struct {
+	Context      string `json:"context"`
+	ExportLength int    `json:"exportLength"`
+	ExportValue  string `json:"exportValue"`
+}
+
+type exporterTestVector struct {
+	context      []byte
+	exportLength int
+	exportValue  []byte
+}
+
+func (etv exporterTestVector) MarshalJSON() ([]byte, error) {
+	return json.Marshal(rawExporterTestVector{
+		Context:      mustHex(etv.context),
+		ExportLength: etv.exportLength,
+		ExportValue:  mustHex(etv.exportValue),
+	})
+}
+
+func (etv *exporterTestVector) UnmarshalJSON(data []byte) error {
+	raw := rawExporterTestVector{}
+	err := json.Unmarshal(data, &raw)
+	if err != nil {
+		return err
+	}
+
+	etv.context = mustUnhex(nil, raw.Context)
+	etv.exportLength = raw.ExportLength
+	etv.exportValue = mustUnhex(nil, raw.ExportValue)
 	return nil
 }
 
@@ -161,6 +198,7 @@ type rawTestVector struct {
 	ExporterSecret string `json:"exporterSecret"`
 
 	Encryptions []encryptionTestVector `json:"encryptions"`
+	Exports     []exporterTestVector   `json:"exports"`
 }
 
 type testVector struct {
@@ -196,6 +234,7 @@ type testVector struct {
 	exporterSecret []byte
 
 	encryptions []encryptionTestVector
+	exports     []exporterTestVector
 }
 
 func (tv testVector) MarshalJSON() ([]byte, error) {
@@ -225,6 +264,7 @@ func (tv testVector) MarshalJSON() ([]byte, error) {
 		ExporterSecret: mustHex(tv.exporterSecret),
 
 		Encryptions: tv.encryptions,
+		Exports:     tv.exports,
 	})
 }
 
@@ -267,6 +307,7 @@ func (tv *testVector) UnmarshalJSON(data []byte) error {
 	tv.exporterSecret = mustUnhex(tv.t, raw.ExporterSecret)
 
 	tv.encryptions = raw.Encryptions
+	tv.exports = raw.Exports
 	return nil
 }
 
@@ -490,6 +531,23 @@ func generateEncryptions(t *testing.T, suite CipherSuite, ctxI *EncryptContext, 
 	return vectors, nil
 }
 
+func generateExports(t *testing.T, suite CipherSuite, ctxI *EncryptContext, ctxR *DecryptContext) ([]exporterTestVector, error) {
+	vectors := make([]exporterTestVector, testVectorExportCount)
+	for i := 0; i < len(vectors); i++ {
+		context := []byte(fmt.Sprintf("Context-%d", i))
+		exportI := ctxI.Export(context, testVectorExportLength)
+		exportR := ctxR.Export(context, testVectorExportLength)
+		assertBytesEqual(t, suite, "Incorrect export", exportI, exportR)
+		vectors[i] = exporterTestVector{
+			context:      context,
+			exportLength: testVectorExportLength,
+			exportValue:  exportI,
+		}
+	}
+
+	return vectors, nil
+}
+
 func generateTestVector(t *testing.T, setup setupMode, kemID KEMID, kdfID KDFID, aeadID AEADID) testVector {
 	suite, err := AssembleCipherSuite(kemID, kdfID, aeadID)
 	if err != nil {
@@ -510,6 +568,9 @@ func generateTestVector(t *testing.T, setup setupMode, kemID KEMID, kdfID KDFID,
 
 	encryptionVectors, err := generateEncryptions(t, suite, ctxI, ctxR)
 	assertNotError(t, suite, "Error in generateEncryptions", err)
+
+	exportVectors, err := generateExports(t, suite, ctxI, ctxR)
+	assertNotError(t, suite, "Error in generateExports", err)
 
 	vector := testVector{
 		t:              t,
@@ -535,6 +596,7 @@ func generateTestVector(t *testing.T, setup setupMode, kemID KEMID, kdfID KDFID,
 		nonce:          ctxI.nonce,
 		exporterSecret: ctxI.exporterSecret,
 		encryptions:    encryptionVectors,
+		exports:        exportVectors,
 	}
 
 	return vector
