@@ -55,13 +55,13 @@ func mustHex(d []byte) string {
 
 func mustUnmarshalPriv(t *testing.T, suite CipherSuite, h string) KEMPrivateKey {
 	skm := mustUnhex(t, h)
-	sk, err := suite.KEM.unmarshalPrivate(skm)
+	sk, err := suite.KEM.UnmarshalPrivate(skm)
 	fatalOnError(t, err, "unmarshalPrivate failed")
 	return sk
 }
 
 func mustMarshalPriv(suite CipherSuite, priv KEMPrivateKey) string {
-	return mustHex(suite.KEM.marshalPrivate(priv))
+	return mustHex(suite.KEM.MarshalPrivate(priv))
 }
 
 func mustUnmarshalPub(t *testing.T, suite CipherSuite, h string) KEMPublicKey {
@@ -178,14 +178,14 @@ type rawTestVector struct {
 
 	// Private keys
 	SKR   string `json:"skR"`
-	SKI   string `json:"skI,omitempty"`
+	SKS   string `json:"skS,omitempty"`
 	SKE   string `json:"skE"`
 	PSK   string `json:"psk,omitempty"`
 	PSKID string `json:"pskID,omitempty"`
 
 	// Public keys
 	PKR string `json:"pkR"`
-	PKI string `json:"pkI,omitempty"`
+	PKI string `json:"pkS,omitempty"`
 	PKE string `json:"pkE"`
 
 	// Key schedule inputs and computations
@@ -214,14 +214,14 @@ type testVector struct {
 
 	// Private keys
 	skR   KEMPrivateKey
-	skI   KEMPrivateKey
+	skS   KEMPrivateKey
 	skE   KEMPrivateKey
 	psk   []byte
 	pskID []byte
 
 	// Public keys
 	pkR KEMPublicKey
-	pkI KEMPublicKey
+	pkS KEMPublicKey
 	pkE KEMPublicKey
 
 	// Key schedule inputs and computations
@@ -246,13 +246,13 @@ func (tv testVector) MarshalJSON() ([]byte, error) {
 		Info:   mustHex(tv.info),
 
 		SKR:   mustMarshalPriv(tv.suite, tv.skR),
-		SKI:   mustMarshalPriv(tv.suite, tv.skI),
+		SKS:   mustMarshalPriv(tv.suite, tv.skS),
 		SKE:   mustMarshalPriv(tv.suite, tv.skE),
 		PSK:   mustHex(tv.psk),
 		PSKID: mustHex(tv.pskID),
 
 		PKR: mustMarshalPub(tv.suite, tv.pkR),
-		PKI: mustMarshalPub(tv.suite, tv.pkI),
+		PKI: mustMarshalPub(tv.suite, tv.pkS),
 		PKE: mustMarshalPub(tv.suite, tv.pkE),
 
 		Enc:            mustHex(tv.enc),
@@ -287,7 +287,7 @@ func (tv *testVector) UnmarshalJSON(data []byte) error {
 	}
 
 	tv.skR = mustUnmarshalPriv(tv.t, tv.suite, raw.SKR)
-	tv.skI = mustUnmarshalPriv(tv.t, tv.suite, raw.SKI)
+	tv.skS = mustUnmarshalPriv(tv.t, tv.suite, raw.SKS)
 	tv.skE = mustUnmarshalPriv(tv.t, tv.suite, raw.SKE)
 	tv.psk = mustUnhex(tv.t, raw.PSK)
 	tv.pskID = mustUnhex(tv.t, raw.PSKID)
@@ -295,7 +295,7 @@ func (tv *testVector) UnmarshalJSON(data []byte) error {
 	tv.suite.KEM.setEphemeralKeyPair(tv.skE)
 
 	tv.pkR = mustUnmarshalPub(tv.t, tv.suite, raw.PKR)
-	tv.pkI = mustUnmarshalPub(tv.t, tv.suite, raw.PKI)
+	tv.pkS = mustUnmarshalPub(tv.t, tv.suite, raw.PKI)
 	tv.pkE = mustUnmarshalPub(tv.t, tv.suite, raw.PKE)
 
 	tv.enc = mustUnhex(tv.t, raw.Enc)
@@ -337,28 +337,28 @@ func (tva *testVectorArray) UnmarshalJSON(data []byte) error {
 type setupMode struct {
 	Mode HPKEMode
 	OK   func(suite CipherSuite) bool
-	I    func(suite CipherSuite, pkR KEMPublicKey, info []byte, skI KEMPrivateKey, psk, pskID []byte) ([]byte, *EncryptContext, error)
-	R    func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkI KEMPublicKey, psk, pskID []byte) (*DecryptContext, error)
+	I    func(suite CipherSuite, pkR KEMPublicKey, info []byte, skS KEMPrivateKey, psk, pskID []byte) ([]byte, *EncryptContext, error)
+	R    func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkS KEMPublicKey, psk, pskID []byte) (*DecryptContext, error)
 }
 
 var setupModes = map[HPKEMode]setupMode{
 	modeBase: {
 		Mode: modeBase,
 		OK:   func(suite CipherSuite) bool { return true },
-		I: func(suite CipherSuite, pkR KEMPublicKey, info []byte, skI KEMPrivateKey, psk, pskID []byte) ([]byte, *EncryptContext, error) {
-			return SetupBaseI(suite, rand.Reader, pkR, info)
+		I: func(suite CipherSuite, pkR KEMPublicKey, info []byte, skS KEMPrivateKey, psk, pskID []byte) ([]byte, *EncryptContext, error) {
+			return SetupBaseS(suite, rand.Reader, pkR, info)
 		},
-		R: func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkI KEMPublicKey, psk, pskID []byte) (*DecryptContext, error) {
+		R: func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkS KEMPublicKey, psk, pskID []byte) (*DecryptContext, error) {
 			return SetupBaseR(suite, skR, enc, info)
 		},
 	},
 	modePSK: {
 		Mode: modePSK,
 		OK:   func(suite CipherSuite) bool { return true },
-		I: func(suite CipherSuite, pkR KEMPublicKey, info []byte, skI KEMPrivateKey, psk, pskID []byte) ([]byte, *EncryptContext, error) {
-			return SetupPSKI(suite, rand.Reader, pkR, psk, pskID, info)
+		I: func(suite CipherSuite, pkR KEMPublicKey, info []byte, skS KEMPrivateKey, psk, pskID []byte) ([]byte, *EncryptContext, error) {
+			return SetupPSKS(suite, rand.Reader, pkR, psk, pskID, info)
 		},
-		R: func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkI KEMPublicKey, psk, pskID []byte) (*DecryptContext, error) {
+		R: func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkS KEMPublicKey, psk, pskID []byte) (*DecryptContext, error) {
 			return SetupPSKR(suite, skR, enc, psk, pskID, info)
 		},
 	},
@@ -368,11 +368,11 @@ var setupModes = map[HPKEMode]setupMode{
 			_, ok := suite.KEM.(AuthKEMScheme)
 			return ok
 		},
-		I: func(suite CipherSuite, pkR KEMPublicKey, info []byte, skI KEMPrivateKey, psk, pskID []byte) ([]byte, *EncryptContext, error) {
-			return SetupAuthI(suite, rand.Reader, pkR, skI, info)
+		I: func(suite CipherSuite, pkR KEMPublicKey, info []byte, skS KEMPrivateKey, psk, pskID []byte) ([]byte, *EncryptContext, error) {
+			return SetupAuthS(suite, rand.Reader, pkR, skS, info)
 		},
-		R: func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkI KEMPublicKey, psk, pskID []byte) (*DecryptContext, error) {
-			return SetupAuthR(suite, skR, pkI, enc, info)
+		R: func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkS KEMPublicKey, psk, pskID []byte) (*DecryptContext, error) {
+			return SetupAuthR(suite, skR, pkS, enc, info)
 		},
 	},
 	modePSKAuth: {
@@ -381,11 +381,11 @@ var setupModes = map[HPKEMode]setupMode{
 			_, ok := suite.KEM.(AuthKEMScheme)
 			return ok
 		},
-		I: func(suite CipherSuite, pkR KEMPublicKey, info []byte, skI KEMPrivateKey, psk, pskID []byte) ([]byte, *EncryptContext, error) {
-			return SetupPSKAuthI(suite, rand.Reader, pkR, skI, psk, pskID, info)
+		I: func(suite CipherSuite, pkR KEMPublicKey, info []byte, skS KEMPrivateKey, psk, pskID []byte) ([]byte, *EncryptContext, error) {
+			return SetupPSKAuthS(suite, rand.Reader, pkR, skS, psk, pskID, info)
 		},
-		R: func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkI KEMPublicKey, psk, pskID []byte) (*DecryptContext, error) {
-			return SetupPSKAuthR(suite, skR, pkI, enc, psk, pskID, info)
+		R: func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkS KEMPublicKey, psk, pskID []byte) (*DecryptContext, error) {
+			return SetupPSKAuthR(suite, skR, pkS, enc, psk, pskID, info)
 		},
 	},
 }
@@ -410,13 +410,13 @@ func (rtt roundTripTest) Test(t *testing.T) {
 		return
 	}
 
-	skI, pkI := mustGenerateKeyPair(t, suite)
+	skS, pkS := mustGenerateKeyPair(t, suite)
 	skR, pkR := mustGenerateKeyPair(t, suite)
 
-	enc, ctxI, err := rtt.setup.I(suite, pkR, info, skI, psk, pskID)
+	enc, ctxI, err := rtt.setup.I(suite, pkR, info, skS, psk, pskID)
 	assertNotError(t, suite, "Error in SetupI", err)
 
-	ctxR, err := rtt.setup.R(suite, skR, enc, info, pkI, psk, pskID)
+	ctxR, err := rtt.setup.R(suite, skR, enc, info, pkS, psk, pskID)
 	assertNotError(t, suite, "Error in SetupR", err)
 
 	// Verify encryption functionality
@@ -474,11 +474,11 @@ func verifyParameters(tv testVector, ctx cipherContext) {
 func verifyTestVector(tv testVector) {
 	setup := setupModes[tv.mode]
 
-	enc, ctxI, err := setup.I(tv.suite, tv.pkR, tv.info, tv.skI, tv.psk, tv.pskID)
+	enc, ctxI, err := setup.I(tv.suite, tv.pkR, tv.info, tv.skS, tv.psk, tv.pskID)
 	assertNotError(tv.t, tv.suite, "Error in SetupI", err)
 	assertBytesEqual(tv.t, tv.suite, "Encapsulated key mismatch", enc, tv.enc)
 
-	ctxR, err := setup.R(tv.suite, tv.skR, tv.enc, tv.info, tv.pkI, tv.psk, tv.pskID)
+	ctxR, err := setup.R(tv.suite, tv.skR, tv.enc, tv.info, tv.pkS, tv.psk, tv.pskID)
 	assertNotError(tv.t, tv.suite, "Error in SetupR", err)
 
 	verifyParameters(tv, ctxI.cipherContext)
@@ -555,15 +555,15 @@ func generateTestVector(t *testing.T, setup setupMode, kemID KEMID, kdfID KDFID,
 	}
 
 	skR, pkR := mustGenerateKeyPair(t, suite)
-	skI, pkI := mustGenerateKeyPair(t, suite)
+	skS, pkS := mustGenerateKeyPair(t, suite)
 	skE, pkE := mustGenerateKeyPair(t, suite)
 
 	suite.KEM.setEphemeralKeyPair(skE)
 
-	enc, ctxI, err := setup.I(suite, pkR, info, skI, psk, pskID)
-	assertNotError(t, suite, "Error in SetupPSKI", err)
+	enc, ctxI, err := setup.I(suite, pkR, info, skS, psk, pskID)
+	assertNotError(t, suite, "Error in SetupPSKS", err)
 
-	ctxR, err := setup.R(suite, skR, enc, info, pkI, psk, pskID)
+	ctxR, err := setup.R(suite, skR, enc, info, pkS, psk, pskID)
 	assertNotError(t, suite, "Error in SetupPSKR", err)
 
 	encryptionVectors, err := generateEncryptions(t, suite, ctxI, ctxR)
@@ -582,10 +582,10 @@ func generateTestVector(t *testing.T, setup setupMode, kemID KEMID, kdfID KDFID,
 		info:           info,
 		skR:            skR,
 		pkR:            pkR,
-		skI:            skI,
+		skS:            skS,
 		psk:            psk,
 		pskID:          pskID,
-		pkI:            pkI,
+		pkS:            pkS,
 		skE:            skE,
 		pkE:            pkE,
 		enc:            ctxI.setupParams.enc,

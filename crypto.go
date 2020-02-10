@@ -103,7 +103,7 @@ func (s dhkemScheme) Decap(enc []byte, skR KEMPrivateKey) ([]byte, error) {
 	return zz, nil
 }
 
-func (s dhkemScheme) AuthEncap(rand io.Reader, pkR KEMPublicKey, skI KEMPrivateKey) ([]byte, []byte, error) {
+func (s dhkemScheme) AuthEncap(rand io.Reader, pkR KEMPublicKey, skS KEMPrivateKey) ([]byte, []byte, error) {
 	skE, pkE, err := s.getEphemeralKeyPair(rand)
 	if err != nil {
 		return nil, nil, err
@@ -114,7 +114,7 @@ func (s dhkemScheme) AuthEncap(rand io.Reader, pkR KEMPublicKey, skI KEMPrivateK
 		return nil, nil, err
 	}
 
-	zzIR, err := s.group.DH(skI, pkR)
+	zzIR, err := s.group.DH(skS, pkR)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -123,7 +123,7 @@ func (s dhkemScheme) AuthEncap(rand io.Reader, pkR KEMPublicKey, skI KEMPrivateK
 	return zz, s.group.Marshal(pkE), nil
 }
 
-func (s dhkemScheme) AuthDecap(enc []byte, skR KEMPrivateKey, pkI KEMPublicKey) ([]byte, error) {
+func (s dhkemScheme) AuthDecap(enc []byte, skR KEMPrivateKey, pkS KEMPublicKey) ([]byte, error) {
 	pkE, err := s.group.Unmarshal(enc)
 	if err != nil {
 		return nil, err
@@ -134,7 +134,7 @@ func (s dhkemScheme) AuthDecap(enc []byte, skR KEMPrivateKey, pkI KEMPublicKey) 
 		return nil, err
 	}
 
-	zzIR, err := s.group.DH(skR, pkI)
+	zzIR, err := s.group.DH(skR, pkS)
 	if err != nil {
 		return nil, err
 	}

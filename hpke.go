@@ -38,8 +38,8 @@ type KEMScheme interface {
 
 type AuthKEMScheme interface {
 	KEMScheme
-	AuthEncap(rand io.Reader, pkR KEMPublicKey, skI KEMPrivateKey) ([]byte, []byte, error)
-	AuthDecap(enc []byte, skR KEMPrivateKey, pkI KEMPublicKey) ([]byte, error)
+	AuthEncap(rand io.Reader, pkR KEMPublicKey, skS KEMPrivateKey) ([]byte, []byte, error)
+	AuthDecap(enc []byte, skR KEMPrivateKey, pkS KEMPublicKey) ([]byte, error)
 }
 
 type KDFScheme interface {
@@ -99,13 +99,13 @@ func defaultPSKID(suite CipherSuite) []byte {
 	return []byte{}
 }
 
-func verifyMode(suite CipherSuite, mode HPKEMode, psk, pskID, pkIm []byte) error {
+func verifyMode(suite CipherSuite, mode HPKEMode, psk, pskID, pkSm []byte) error {
 	defaultPKIm := defaultPKIm(suite)
 	defaultPSK := defaultPSK(suite)
 	defaultPSKID := defaultPSKID(suite)
 
-	gotPKIm := !bytes.Equal(pkIm, defaultPKIm)
-	noPKIm := bytes.Equal(pkIm, defaultPKIm)
+	gotPKIm := !bytes.Equal(pkSm, defaultPKIm)
+	noPKIm := bytes.Equal(pkSm, defaultPKIm)
 	gotPSK := !bytes.Equal(psk, defaultPSK) && !bytes.Equal(pskID, defaultPSKID)
 	noPSK := bytes.Equal(psk, defaultPSK) && bytes.Equal(pskID, defaultPSKID)
 
@@ -135,7 +135,7 @@ type hpkeContext struct {
 	aeadID    AEADID
 	enc       []byte `tls:"head=none"`
 	pkRm      []byte `tls:"head=none"`
-	pkIm      []byte `tls:"head=none"`
+	pkSm      []byte `tls:"head=none"`
 	pskIDHash []byte `tls:"head=none"`
 	infoHash  []byte `tls:"head=none"`
 }
@@ -153,7 +153,7 @@ func (cp contextParameters) aeadKey() []byte {
 
 func (cp contextParameters) exporterSecret() []byte {
 	context := append([]byte("hpke exp"), cp.context...)
-	return cp.suite.KDF.Expand(cp.secret, context, cp.suite.AEAD.KeySize())
+	return cp.suite.KDF.Expand(cp.secret, context, cp.suite.KDF.OutputSize())
 }
 
 func (cp contextParameters) aeadNonce() []byte {
@@ -166,8 +166,8 @@ type setupParameters struct {
 	enc []byte
 }
 
-func keySchedule(suite CipherSuite, mode HPKEMode, pkR KEMPublicKey, zz, enc, info, psk, pskID, pkIm []byte) (contextParameters, error) {
-	err := verifyMode(suite, mode, psk, pskID, pkIm)
+func keySchedule(suite CipherSuite, mode HPKEMode, pkR KEMPublicKey, zz, enc, info, psk, pskID, pkSm []byte) (contextParameters, error) {
+	err := verifyMode(suite, mode, psk, pskID, pkSm)
 	if err != nil {
 		return contextParameters{}, err
 	}
@@ -176,7 +176,7 @@ func keySchedule(suite CipherSuite, mode HPKEMode, pkR KEMPublicKey, zz, enc, in
 	pskIDHash := suite.KDF.Hash(pskID)
 	infoHash := suite.KDF.Hash(info)
 
-	contextStruct := hpkeContext{mode, suite.KEM.ID(), suite.KDF.ID(), suite.AEAD.ID(), enc, pkRm, pkIm, pskIDHash, infoHash}
+	contextStruct := hpkeContext{mode, suite.KEM.ID(), suite.KDF.ID(), suite.AEAD.ID(), enc, pkRm, pkSm, pskIDHash, infoHash}
 	context, err := syntax.Marshal(contextStruct)
 	if err != nil {
 		return contextParameters{}, err
@@ -296,7 +296,7 @@ func (ctx *DecryptContext) Export(context []byte, L int) []byte {
 ///////
 // Base
 
-func SetupBaseI(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, info []byte) ([]byte, *EncryptContext, error) {
+func SetupBaseS(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, info []byte) ([]byte, *EncryptContext, error) {
 	// zz, enc = Encap(pkR)
 	zz, enc, err := suite.KEM.Encap(rand, pkR)
 	if err != nil {
@@ -309,7 +309,7 @@ func SetupBaseI(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, info []byte
 	}
 
 	// return enc, KeySchedule(mode_base, pkR, zz, enc, info,
-	//                        default_psk, default_pskID, default_pkIm)
+	//                        default_psk, default_pskID, default_pkSm)
 	params, err := keySchedule(suite, modeBase, pkR, zz, enc, info, defaultPSK(suite), defaultPSKID(suite), defaultPKIm(suite))
 	if err != nil {
 		return nil, nil, err
@@ -343,7 +343,7 @@ func SetupBaseR(suite CipherSuite, skR KEMPrivateKey, enc, info []byte) (*Decryp
 //////
 // PSK
 
-func SetupPSKI(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, psk, pskID, info []byte) ([]byte, *EncryptContext, error) {
+func SetupPSKS(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, psk, pskID, info []byte) ([]byte, *EncryptContext, error) {
 	// zz, enc = Encap(pkR)
 	zz, enc, err := suite.KEM.Encap(rand, pkR)
 	if err != nil {
@@ -388,10 +388,10 @@ func SetupPSKR(suite CipherSuite, skR KEMPrivateKey, enc, psk, pskID, info []byt
 ///////
 // Auth
 
-func SetupAuthI(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, skI KEMPrivateKey, info []byte) ([]byte, *EncryptContext, error) {
-	// zz, enc = AuthEncap(pkR, skI)
+func SetupAuthS(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, skS KEMPrivateKey, info []byte) ([]byte, *EncryptContext, error) {
+	// zz, enc = AuthEncap(pkR, skS)
 	auth := suite.KEM.(AuthKEMScheme)
-	zz, enc, err := auth.AuthEncap(rand, pkR, skI)
+	zz, enc, err := auth.AuthEncap(rand, pkR, skS)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -401,8 +401,8 @@ func SetupAuthI(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, skI KEMPriv
 		enc: enc,
 	}
 
-	pkIm := suite.KEM.Marshal(skI.PublicKey())
-	params, err := keySchedule(suite, modeAuth, pkR, zz, enc, info, defaultPSK(suite), defaultPSKID(suite), pkIm)
+	pkSm := suite.KEM.Marshal(skS.PublicKey())
+	params, err := keySchedule(suite, modeAuth, pkR, zz, enc, info, defaultPSK(suite), defaultPSKID(suite), pkSm)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -411,10 +411,10 @@ func SetupAuthI(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, skI KEMPriv
 	return enc, ctx, err
 }
 
-func SetupAuthR(suite CipherSuite, skR KEMPrivateKey, pkI KEMPublicKey, enc, info []byte) (*DecryptContext, error) {
-	// zz = AuthDecap(enc, skR, pkI)
+func SetupAuthR(suite CipherSuite, skR KEMPrivateKey, pkS KEMPublicKey, enc, info []byte) (*DecryptContext, error) {
+	// zz = AuthDecap(enc, skR, pkS)
 	auth := suite.KEM.(AuthKEMScheme)
-	zz, err := auth.AuthDecap(enc, skR, pkI)
+	zz, err := auth.AuthDecap(enc, skR, pkS)
 	if err != nil {
 		return nil, err
 	}
@@ -424,9 +424,9 @@ func SetupAuthR(suite CipherSuite, skR KEMPrivateKey, pkI KEMPublicKey, enc, inf
 		enc: enc,
 	}
 
-	pkIm := suite.KEM.Marshal(pkI)
+	pkSm := suite.KEM.Marshal(pkS)
 	pkR := skR.PublicKey()
-	params, err := keySchedule(suite, modeAuth, pkR, zz, enc, info, defaultPSK(suite), defaultPSKID(suite), pkIm)
+	params, err := keySchedule(suite, modeAuth, pkR, zz, enc, info, defaultPSK(suite), defaultPSKID(suite), pkSm)
 	if err != nil {
 		return nil, err
 	}
@@ -437,10 +437,10 @@ func SetupAuthR(suite CipherSuite, skR KEMPrivateKey, pkI KEMPublicKey, enc, inf
 /////////////
 // PSK + Auth
 
-func SetupPSKAuthI(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, skI KEMPrivateKey, psk, pskID, info []byte) ([]byte, *EncryptContext, error) {
-	// zz, enc = AuthEncap(pkR, skI)
+func SetupPSKAuthS(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, skS KEMPrivateKey, psk, pskID, info []byte) ([]byte, *EncryptContext, error) {
+	// zz, enc = AuthEncap(pkR, skS)
 	auth := suite.KEM.(AuthKEMScheme)
-	zz, enc, err := auth.AuthEncap(rand, pkR, skI)
+	zz, enc, err := auth.AuthEncap(rand, pkR, skS)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -450,8 +450,8 @@ func SetupPSKAuthI(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, skI KEMP
 		enc: enc,
 	}
 
-	pkIm := suite.KEM.Marshal(skI.PublicKey())
-	params, err := keySchedule(suite, modePSKAuth, pkR, zz, enc, info, psk, pskID, pkIm)
+	pkSm := suite.KEM.Marshal(skS.PublicKey())
+	params, err := keySchedule(suite, modePSKAuth, pkR, zz, enc, info, psk, pskID, pkSm)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -460,10 +460,10 @@ func SetupPSKAuthI(suite CipherSuite, rand io.Reader, pkR KEMPublicKey, skI KEMP
 	return enc, ctx, err
 }
 
-func SetupPSKAuthR(suite CipherSuite, skR KEMPrivateKey, pkI KEMPublicKey, enc, psk, pskID, info []byte) (*DecryptContext, error) {
-	// zz = AuthDecap(enc, skR, pkI)
+func SetupPSKAuthR(suite CipherSuite, skR KEMPrivateKey, pkS KEMPublicKey, enc, psk, pskID, info []byte) (*DecryptContext, error) {
+	// zz = AuthDecap(enc, skR, pkS)
 	auth := suite.KEM.(AuthKEMScheme)
-	zz, err := auth.AuthDecap(enc, skR, pkI)
+	zz, err := auth.AuthDecap(enc, skR, pkS)
 	if err != nil {
 		return nil, err
 	}
@@ -473,9 +473,9 @@ func SetupPSKAuthR(suite CipherSuite, skR KEMPrivateKey, pkI KEMPublicKey, enc, 
 		enc: enc,
 	}
 
-	pkIm := suite.KEM.Marshal(pkI)
+	pkSm := suite.KEM.Marshal(pkS)
 	pkR := skR.PublicKey()
-	params, err := keySchedule(suite, modePSKAuth, pkR, zz, enc, info, psk, pskID, pkIm)
+	params, err := keySchedule(suite, modePSKAuth, pkR, zz, enc, info, psk, pskID, pkSm)
 	if err != nil {
 		return nil, err
 	}
