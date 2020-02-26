@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	psk           = []byte("mellon")
+	psk           = []byte("5db3b80a81cb63ca59470c83414ef70ac1cc806639d01357849740a03daddfc9")
 	pskID         = []byte("Ennyn Durin aran Moria")
 	original      = []byte("Beauty is truth, truth beauty")
 	aad           = []byte("that is all // Ye know on earth, and all ye need to know")
