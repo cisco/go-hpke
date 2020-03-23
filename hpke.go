@@ -147,17 +147,17 @@ type contextParameters struct {
 }
 
 func (cp contextParameters) aeadKey() []byte {
-	context := append([]byte("hpke key"), cp.context...)
+	context := append([]byte("key"), cp.context...)
 	return cp.suite.KDF.Expand(cp.secret, context, cp.suite.AEAD.KeySize())
 }
 
 func (cp contextParameters) exporterSecret() []byte {
-	context := append([]byte("hpke exp"), cp.context...)
+	context := append([]byte("exp"), cp.context...)
 	return cp.suite.KDF.Expand(cp.secret, context, cp.suite.KDF.OutputSize())
 }
 
 func (cp contextParameters) aeadNonce() []byte {
-	context := append([]byte("hpke nonce"), cp.context...)
+	context := append([]byte("nonce"), cp.context...)
 	return cp.suite.KDF.Expand(cp.secret, context, cp.suite.AEAD.NonceSize())
 }
 
