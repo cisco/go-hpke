@@ -12,8 +12,8 @@ import (
 )
 
 var (
-	psk           = []byte("5db3b80a81cb63ca59470c83414ef70ac1cc806639d01357849740a03daddfc9")
-	pskID         = []byte("Ennyn Durin aran Moria")
+	fixedPSK      = []byte{0x5d, 0xb3, 0xb8, 0x0a, 0x81, 0xcb, 0x63, 0xca, 0x59, 0x47, 0x0c, 0x83, 0x41, 0x4e, 0xf7, 0x0a}
+	fixedPSKID    = []byte("Ennyn Durin aran Moria")
 	original      = []byte("Beauty is truth, truth beauty")
 	aad           = []byte("that is all // Ye know on earth, and all ye need to know")
 	info          = []byte("Ode on a Grecian Urn")
@@ -413,10 +413,10 @@ func (rtt roundTripTest) Test(t *testing.T) {
 	skS, pkS := mustGenerateKeyPair(t, suite)
 	skR, pkR := mustGenerateKeyPair(t, suite)
 
-	enc, ctxI, err := rtt.setup.I(suite, pkR, info, skS, psk, pskID)
+	enc, ctxI, err := rtt.setup.I(suite, pkR, info, skS, fixedPSK, fixedPSKID)
 	assertNotError(t, suite, "Error in SetupI", err)
 
-	ctxR, err := rtt.setup.R(suite, skR, enc, info, pkS, psk, pskID)
+	ctxR, err := rtt.setup.R(suite, skR, enc, info, pkS, fixedPSK, fixedPSKID)
 	assertNotError(t, suite, "Error in SetupR", err)
 
 	// Verify encryption functionality
@@ -560,10 +560,10 @@ func generateTestVector(t *testing.T, setup setupMode, kemID KEMID, kdfID KDFID,
 
 	suite.KEM.setEphemeralKeyPair(skE)
 
-	enc, ctxI, err := setup.I(suite, pkR, info, skS, psk, pskID)
+	enc, ctxI, err := setup.I(suite, pkR, info, skS, fixedPSK, fixedPSKID)
 	assertNotError(t, suite, "Error in SetupPSKS", err)
 
-	ctxR, err := setup.R(suite, skR, enc, info, pkS, psk, pskID)
+	ctxR, err := setup.R(suite, skR, enc, info, pkS, fixedPSK, fixedPSKID)
 	assertNotError(t, suite, "Error in SetupPSKR", err)
 
 	encryptionVectors, err := generateEncryptions(t, suite, ctxI, ctxR)
@@ -583,8 +583,8 @@ func generateTestVector(t *testing.T, setup setupMode, kemID KEMID, kdfID KDFID,
 		skR:            skR,
 		pkR:            pkR,
 		skS:            skS,
-		psk:            psk,
-		pskID:          pskID,
+		psk:            fixedPSK,
+		pskID:          fixedPSKID,
 		pkS:            pkS,
 		skE:            skE,
 		pkE:            pkE,
