@@ -2,6 +2,7 @@ package hpke
 
 import (
 	"bytes"
+	"crypto"
 	"crypto/elliptic"
 	"crypto/rand"
 	"testing"
@@ -17,10 +18,10 @@ func randomBytes(size int) []byte {
 
 func TestKEMSchemes(t *testing.T) {
 	schemes := []KEMScheme{
-		&dhkemScheme{group: x25519Scheme{}},
-		&dhkemScheme{group: x448Scheme{}},
-		&dhkemScheme{group: ecdhScheme{curve: elliptic.P256()}},
-		&dhkemScheme{group: ecdhScheme{curve: elliptic.P521()}},
+		&dhkemScheme{group: x25519Scheme{}, KDF: hkdfScheme{hash: crypto.SHA256}},
+		&dhkemScheme{group: x448Scheme{}, KDF: hkdfScheme{hash: crypto.SHA512}},
+		&dhkemScheme{group: ecdhScheme{curve: elliptic.P256()}, KDF: hkdfScheme{hash: crypto.SHA256}},
+		&dhkemScheme{group: ecdhScheme{curve: elliptic.P521()}, KDF: hkdfScheme{hash: crypto.SHA512}},
 		&sikeScheme{field: sidh.Fp503},
 		&sikeScheme{field: sidh.Fp751},
 	}
@@ -100,8 +101,8 @@ func TestAEADSchemes(t *testing.T) {
 	}
 
 	for i, s := range schemes {
-		key := randomBytes(s.KeySize())
-		nonce := randomBytes(s.NonceSize())
+		key := randomBytes(int(s.KeySize()))
+		nonce := randomBytes(int(s.NonceSize()))
 		pt := randomBytes(1024)
 		aad := randomBytes(1024)
 
