@@ -12,8 +12,8 @@ import (
 )
 
 var (
-	psk           = []byte("5db3b80a81cb63ca59470c83414ef70ac1cc806639d01357849740a03daddfc9")
-	pskID         = []byte("Ennyn Durin aran Moria")
+	fixedPSK      = []byte{0x5d, 0xb3, 0xb8, 0x0a, 0x81, 0xcb, 0x63, 0xca, 0x59, 0x47, 0x0c, 0x83, 0x41, 0x4e, 0xf7, 0x0a}
+	fixedPSKID    = []byte("Ennyn Durin aran Moria")
 	original      = []byte("Beauty is truth, truth beauty")
 	aad           = []byte("that is all // Ye know on earth, and all ye need to know")
 	info          = []byte("Ode on a Grecian Urn")
@@ -53,10 +53,12 @@ func mustHex(d []byte) string {
 	return hex.EncodeToString(d)
 }
 
-func mustUnmarshalPriv(t *testing.T, suite CipherSuite, h string) KEMPrivateKey {
+func mustUnmarshalPriv(t *testing.T, suite CipherSuite, h string, required bool) KEMPrivateKey {
 	skm := mustUnhex(t, h)
 	sk, err := suite.KEM.UnmarshalPrivate(skm)
-	fatalOnError(t, err, "unmarshalPrivate failed")
+	if required {
+		fatalOnError(t, err, "unmarshalPrivate failed")
+	}
 	return sk
 }
 
@@ -64,10 +66,12 @@ func mustMarshalPriv(suite CipherSuite, priv KEMPrivateKey) string {
 	return mustHex(suite.KEM.MarshalPrivate(priv))
 }
 
-func mustUnmarshalPub(t *testing.T, suite CipherSuite, h string) KEMPublicKey {
+func mustUnmarshalPub(t *testing.T, suite CipherSuite, h string, required bool) KEMPublicKey {
 	pkm := mustUnhex(t, h)
 	pk, err := suite.KEM.Unmarshal(pkm)
-	fatalOnError(t, err, "Unmarshal failed")
+	if required {
+		fatalOnError(t, err, "Unmarshal failed")
+	}
 	return pk
 }
 
@@ -286,17 +290,18 @@ func (tv *testVector) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	tv.skR = mustUnmarshalPriv(tv.t, tv.suite, raw.SKR)
-	tv.skS = mustUnmarshalPriv(tv.t, tv.suite, raw.SKS)
-	tv.skE = mustUnmarshalPriv(tv.t, tv.suite, raw.SKE)
+	modeRequiresSenderKey := (tv.mode == modeAuth || tv.mode == modeAuthPSK)
+	tv.skR = mustUnmarshalPriv(tv.t, tv.suite, raw.SKR, true)
+	tv.skS = mustUnmarshalPriv(tv.t, tv.suite, raw.SKS, modeRequiresSenderKey)
+	tv.skE = mustUnmarshalPriv(tv.t, tv.suite, raw.SKE, true)
 	tv.psk = mustUnhex(tv.t, raw.PSK)
 	tv.pskID = mustUnhex(tv.t, raw.PSKID)
 
 	tv.suite.KEM.setEphemeralKeyPair(tv.skE)
 
-	tv.pkR = mustUnmarshalPub(tv.t, tv.suite, raw.PKR)
-	tv.pkS = mustUnmarshalPub(tv.t, tv.suite, raw.PKI)
-	tv.pkE = mustUnmarshalPub(tv.t, tv.suite, raw.PKE)
+	tv.pkR = mustUnmarshalPub(tv.t, tv.suite, raw.PKR, true)
+	tv.pkS = mustUnmarshalPub(tv.t, tv.suite, raw.PKI, modeRequiresSenderKey)
+	tv.pkE = mustUnmarshalPub(tv.t, tv.suite, raw.PKE, true)
 
 	tv.enc = mustUnhex(tv.t, raw.Enc)
 	tv.zz = mustUnhex(tv.t, raw.Zz)
@@ -375,17 +380,17 @@ var setupModes = map[HPKEMode]setupMode{
 			return SetupAuthR(suite, skR, pkS, enc, info)
 		},
 	},
-	modePSKAuth: {
-		Mode: modePSKAuth,
+	modeAuthPSK: {
+		Mode: modeAuthPSK,
 		OK: func(suite CipherSuite) bool {
 			_, ok := suite.KEM.(AuthKEMScheme)
 			return ok
 		},
 		I: func(suite CipherSuite, pkR KEMPublicKey, info []byte, skS KEMPrivateKey, psk, pskID []byte) ([]byte, *EncryptContext, error) {
-			return SetupPSKAuthS(suite, rand.Reader, pkR, skS, psk, pskID, info)
+			return SetupAuthPSKS(suite, rand.Reader, pkR, skS, psk, pskID, info)
 		},
 		R: func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkS KEMPublicKey, psk, pskID []byte) (*DecryptContext, error) {
-			return SetupPSKAuthR(suite, skR, pkS, enc, psk, pskID, info)
+			return SetupAuthPSKR(suite, skR, pkS, enc, psk, pskID, info)
 		},
 	},
 }
@@ -413,10 +418,10 @@ func (rtt roundTripTest) Test(t *testing.T) {
 	skS, pkS := mustGenerateKeyPair(t, suite)
 	skR, pkR := mustGenerateKeyPair(t, suite)
 
-	enc, ctxI, err := rtt.setup.I(suite, pkR, info, skS, psk, pskID)
+	enc, ctxI, err := rtt.setup.I(suite, pkR, info, skS, fixedPSK, fixedPSKID)
 	assertNotError(t, suite, "Error in SetupI", err)
 
-	ctxR, err := rtt.setup.R(suite, skR, enc, info, pkS, psk, pskID)
+	ctxR, err := rtt.setup.R(suite, skR, enc, info, pkS, fixedPSK, fixedPSKID)
 	assertNotError(t, suite, "Error in SetupR", err)
 
 	// Verify encryption functionality
@@ -555,8 +560,22 @@ func generateTestVector(t *testing.T, setup setupMode, kemID KEMID, kdfID KDFID,
 	}
 
 	skR, pkR := mustGenerateKeyPair(t, suite)
-	skS, pkS := mustGenerateKeyPair(t, suite)
 	skE, pkE := mustGenerateKeyPair(t, suite)
+
+	// The sender key share is only required for Auth mode variants.
+	var pkS KEMPublicKey
+	var skS KEMPrivateKey
+	if setup.Mode == modeAuth || setup.Mode == modeAuthPSK {
+		skS, pkS = mustGenerateKeyPair(t, suite)
+	}
+
+	// A PSK is only required for PSK mode variants.
+	var psk []byte
+	var pskID []byte
+	if setup.Mode == modePSK || setup.Mode == modeAuthPSK {
+		psk = fixedPSK
+		pskID = fixedPSKID
+	}
 
 	suite.KEM.setEphemeralKeyPair(skE)
 
