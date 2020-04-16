@@ -78,7 +78,7 @@ func (s dhkemScheme) getEphemeralKeyPair(rand io.Reader) (KEMPrivateKey, KEMPubl
 	return s.group.GenerateKeyPair(rand)
 }
 
-func (s dhkemScheme) extractAndExpand(dh []byte, kemContext []byte, Nzz uint16) []byte {
+func (s dhkemScheme) extractAndExpand(dh []byte, kemContext []byte, Nzz int) []byte {
 	zeroBytes := make([]byte, s.KDF.OutputSize())
 	prk := s.KDF.LabeledExtract(zeroBytes, "dh", dh)
 	return s.KDF.LabeledExpand(prk, "prk", kemContext, Nzz)
@@ -99,7 +99,7 @@ func (s dhkemScheme) Encap(rand io.Reader, pkR KEMPublicKey) ([]byte, []byte, er
 	pkRm := s.group.Marshal(pkR)
 	kemContext := append(enc, pkRm...)
 
-	Nzz := uint16(s.SharedSecretSize())
+	Nzz := s.SharedSecretSize()
 	zz := s.extractAndExpand(dh, kemContext, Nzz)
 
 	return zz, enc, nil
@@ -119,7 +119,7 @@ func (s dhkemScheme) Decap(enc []byte, skR KEMPrivateKey) ([]byte, error) {
 	pkRm := s.group.Marshal(skR.PublicKey())
 	kemContext := append(enc, pkRm...)
 
-	Nzz := uint16(s.SharedSecretSize())
+	Nzz := s.SharedSecretSize()
 	zz := s.extractAndExpand(dh, kemContext, Nzz)
 
 	return zz, nil
@@ -146,9 +146,16 @@ func (s dhkemScheme) AuthEncap(rand io.Reader, pkR KEMPublicKey, skS KEMPrivateK
 	enc := s.group.Marshal(pkE)
 	pkRm := s.group.Marshal(pkR)
 	pkSm := s.group.Marshal(skS.PublicKey())
-	kemContext := append(append(enc, pkRm...), pkSm...)
 
-	Nzz := uint16(s.SharedSecretSize())
+	Nenc := len(enc)
+	Npk := len(pkRm)
+	Nsk := len(pkSm)
+	kemContext := make([]byte, Nenc+Npk+Nsk)
+	copy(kemContext[:Nenc], enc)
+	copy(kemContext[Nenc:Nenc+Npk], pkRm)
+	copy(kemContext[Nenc+Npk:], pkSm)
+
+	Nzz := s.SharedSecretSize()
 	zz := s.extractAndExpand(dh, kemContext, Nzz)
 
 	return zz, enc, nil
@@ -174,9 +181,16 @@ func (s dhkemScheme) AuthDecap(enc []byte, skR KEMPrivateKey, pkS KEMPublicKey) 
 
 	pkRm := s.group.Marshal(skR.PublicKey())
 	pkSm := s.group.Marshal(pkS)
-	kemContext := append(append(enc, pkRm...), pkSm...)
 
-	Nzz := uint16(s.SharedSecretSize())
+	Nenc := len(enc)
+	Npk := len(pkRm)
+	Nsk := len(pkSm)
+	kemContext := make([]byte, Nenc+Npk+Nsk)
+	copy(kemContext[:Nenc], enc)
+	copy(kemContext[Nenc:Nenc+Npk], pkRm)
+	copy(kemContext[Nenc+Npk:], pkSm)
+
+	Nzz := s.SharedSecretSize()
 	zz := s.extractAndExpand(dh, kemContext, Nzz)
 
 	return zz, nil
@@ -674,12 +688,12 @@ func (s aesgcmScheme) New(key []byte) (cipher.AEAD, error) {
 	return cipher.NewGCM(block)
 }
 
-func (s aesgcmScheme) KeySize() uint16 {
-	return uint16(s.keySize)
+func (s aesgcmScheme) KeySize() int {
+	return s.keySize
 }
 
-func (s aesgcmScheme) NonceSize() uint16 {
-	return uint16(12)
+func (s aesgcmScheme) NonceSize() int {
+	return 12
 }
 
 //////////
@@ -696,12 +710,12 @@ func (s chachaPolyScheme) New(key []byte) (cipher.AEAD, error) {
 	return chacha20poly1305.New(key)
 }
 
-func (s chachaPolyScheme) KeySize() uint16 {
-	return uint16(chacha20poly1305.KeySize)
+func (s chachaPolyScheme) KeySize() int {
+	return chacha20poly1305.KeySize
 }
 
-func (s chachaPolyScheme) NonceSize() uint16 {
-	return uint16(chacha20poly1305.NonceSize)
+func (s chachaPolyScheme) NonceSize() int {
+	return chacha20poly1305.NonceSize
 }
 
 ///////
@@ -715,6 +729,8 @@ func (s hkdfScheme) ID() KDFID {
 	switch s.hash {
 	case crypto.SHA256:
 		return KDF_HKDF_SHA256
+	case crypto.SHA384:
+		return KDF_HKDF_SHA384
 	case crypto.SHA512:
 		return KDF_HKDF_SHA512
 	}
@@ -740,11 +756,11 @@ func (s hkdfScheme) Extract(salt, ikm []byte) []byte {
 	return h.Sum(nil)
 }
 
-func (s hkdfScheme) Expand(prk, info []byte, outLen uint16) []byte {
+func (s hkdfScheme) Expand(prk, info []byte, outLen int) []byte {
 	out := []byte{}
 	T := []byte{}
 	i := byte(1)
-	for uint16(len(out)) < outLen {
+	for len(out) < outLen {
 		block := append(T, info...)
 		block = append(block, i)
 
@@ -763,16 +779,20 @@ func (s hkdfScheme) LabeledExtract(salt []byte, label string, ikm []byte) []byte
 	return s.Extract(salt, labeledIKM)
 }
 
-func (s hkdfScheme) LabeledExpand(prk []byte, label string, info []byte, L uint16) []byte {
+func (s hkdfScheme) LabeledExpand(prk []byte, label string, info []byte, L int) []byte {
+	if L > (1 << 16) {
+		panic("Expand length cannot be larger than 2^16")
+	}
+
 	lengthBuffer := make([]byte, 2)
-	binary.BigEndian.PutUint16(lengthBuffer, L)
+	binary.BigEndian.PutUint16(lengthBuffer, uint16(L))
 	labeledLength := append(lengthBuffer, []byte(rfcLabel+" "+label)...)
 	labeledInfo := append(labeledLength, info...)
 	return s.Expand(prk, labeledInfo, L)
 }
 
-func (s hkdfScheme) OutputSize() uint16 {
-	return uint16(s.hash.Size())
+func (s hkdfScheme) OutputSize() int {
+	return s.hash.Size()
 }
 
 ///////////////////////////
@@ -824,11 +844,13 @@ type KDFID uint16
 
 const (
 	KDF_HKDF_SHA256 KDFID = 0x0001
+	KDF_HKDF_SHA384 KDFID = 0x0002
 	KDF_HKDF_SHA512 KDFID = 0x0003
 )
 
 var kdfs = map[KDFID]KDFScheme{
 	KDF_HKDF_SHA256: hkdfScheme{hash: crypto.SHA256},
+	KDF_HKDF_SHA384: hkdfScheme{hash: crypto.SHA384},
 	KDF_HKDF_SHA512: hkdfScheme{hash: crypto.SHA512},
 }
 

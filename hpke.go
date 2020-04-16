@@ -48,17 +48,17 @@ type KDFScheme interface {
 	ID() KDFID
 	Hash(message []byte) []byte
 	Extract(salt, ikm []byte) []byte
-	Expand(prk, info []byte, L uint16) []byte
+	Expand(prk, info []byte, L int) []byte
 	LabeledExtract(salt []byte, label string, ikm []byte) []byte
-	LabeledExpand(prk []byte, label string, info []byte, L uint16) []byte
-	OutputSize() uint16
+	LabeledExpand(prk []byte, label string, info []byte, L int) []byte
+	OutputSize() int
 }
 
 type AEADScheme interface {
 	ID() AEADID
 	New(key []byte) (cipher.AEAD, error)
-	KeySize() uint16
-	NonceSize() uint16
+	KeySize() int
+	NonceSize() int
 }
 
 type CipherSuite struct {
@@ -241,7 +241,7 @@ func (ctx *cipherContext) incrementSeq() {
 	}
 }
 
-func (ctx *cipherContext) Export(context []byte, L uint16) []byte {
+func (ctx *cipherContext) Export(context []byte, L int) []byte {
 	return ctx.kdf.Expand(ctx.exporterSecret, context, L)
 }
 
@@ -287,7 +287,7 @@ func (ctx *DecryptContext) Open(aad, ct []byte) ([]byte, error) {
 	return pt, nil
 }
 
-func (ctx *DecryptContext) Export(context []byte, L uint16) []byte {
+func (ctx *DecryptContext) Export(context []byte, L int) []byte {
 	return ctx.kdf.Expand(ctx.exporterSecret, context, L)
 }
 

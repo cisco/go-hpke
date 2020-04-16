@@ -19,7 +19,7 @@ var (
 	info          = []byte("Ode on a Grecian Urn")
 	rtts          = 10
 	exportContext = []byte("test export")
-	exportLength  = uint16(32)
+	exportLength  = 32
 )
 
 const (
