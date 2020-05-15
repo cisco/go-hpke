@@ -8,7 +8,7 @@ import (
 	"io"
 	"log"
 
-	"github.com/bifurcation/mint/syntax"
+	"github.com/cisco/go-tls-syntax"
 )
 
 const (
