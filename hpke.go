@@ -30,7 +30,6 @@ type KEMScheme interface {
 	Encap(rand io.Reader, pkR KEMPublicKey) ([]byte, []byte, error)
 	Decap(enc []byte, skR KEMPrivateKey) ([]byte, error)
 	PublicKeySize() int
-	SharedSecretSize() int
 
 	MarshalPrivate(sk KEMPrivateKey) []byte
 	UnmarshalPrivate(enc []byte) (KEMPrivateKey, error)
@@ -171,7 +170,7 @@ func keySchedule(suite CipherSuite, mode HPKEMode, zz, info, psk, pskID, pkSm []
 	}
 
 	zeroBytes := make([]byte, suite.KDF.OutputSize())
-	pskIDHash := suite.KDF.LabeledExtract(zeroBytes, "pskID", pskID)
+	pskIDHash := suite.KDF.LabeledExtract(zeroBytes, "pskID_hash", pskID)
 	infoHash := suite.KDF.LabeledExtract(zeroBytes, "info", info)
 
 	contextStruct := hpkeContext{suite.KEM.ID(), suite.KDF.ID(), suite.AEAD.ID(), mode, pskIDHash, infoHash}
@@ -180,7 +179,7 @@ func keySchedule(suite CipherSuite, mode HPKEMode, zz, info, psk, pskID, pkSm []
 		return contextParameters{}, err
 	}
 
-	psk = suite.KDF.LabeledExtract(zeroBytes, "psk", psk)
+	psk = suite.KDF.LabeledExtract(zeroBytes, "psk_hash", psk)
 	secret := suite.KDF.LabeledExtract(psk, "zz", zz)
 
 	params := contextParameters{

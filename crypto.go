@@ -30,7 +30,6 @@ type dhScheme interface {
 	Unmarshal(enc []byte) (KEMPublicKey, error)
 	DH(priv KEMPrivateKey, pub KEMPublicKey) ([]byte, error)
 	PublicKeySize() int
-	SharedSecretSize() int
 
 	MarshalPrivate(sk KEMPrivateKey) []byte
 	UnmarshalPrivate(enc []byte) (KEMPrivateKey, error)
@@ -102,7 +101,7 @@ func (s dhkemScheme) Encap(rand io.Reader, pkR KEMPublicKey) ([]byte, []byte, er
 	copy(kemContext, enc)
 	copy(kemContext[len(enc):], pkRm)
 
-	Nzz := s.SharedSecretSize()
+	Nzz := s.KDF.OutputSize()
 	zz := s.extractAndExpand(dh, kemContext, Nzz)
 
 	return zz, enc, nil
@@ -125,7 +124,7 @@ func (s dhkemScheme) Decap(enc []byte, skR KEMPrivateKey) ([]byte, error) {
 	copy(kemContext, enc)
 	copy(kemContext[len(enc):], pkRm)
 
-	Nzz := s.SharedSecretSize()
+	Nzz := s.KDF.OutputSize()
 	zz := s.extractAndExpand(dh, kemContext, Nzz)
 
 	return zz, nil
@@ -161,7 +160,7 @@ func (s dhkemScheme) AuthEncap(rand io.Reader, pkR KEMPublicKey, skS KEMPrivateK
 	copy(kemContext[Nenc:Nenc+Npk], pkRm)
 	copy(kemContext[Nenc+Npk:], pkSm)
 
-	Nzz := s.SharedSecretSize()
+	Nzz := s.KDF.OutputSize()
 	zz := s.extractAndExpand(dh, kemContext, Nzz)
 
 	return zz, enc, nil
@@ -196,7 +195,7 @@ func (s dhkemScheme) AuthDecap(enc []byte, skR KEMPrivateKey, pkS KEMPublicKey) 
 	copy(kemContext[Nenc:Nenc+Npk], pkRm)
 	copy(kemContext[Nenc+Npk:], pkSm)
 
-	Nzz := s.SharedSecretSize()
+	Nzz := s.KDF.OutputSize()
 	zz := s.extractAndExpand(dh, kemContext, Nzz)
 
 	return zz, nil
@@ -204,10 +203,6 @@ func (s dhkemScheme) AuthDecap(enc []byte, skR KEMPrivateKey, pkS KEMPublicKey) 
 
 func (s dhkemScheme) PublicKeySize() int {
 	return s.group.PublicKeySize()
-}
-
-func (s dhkemScheme) SharedSecretSize() int {
-	return s.group.SharedSecretSize()
 }
 
 ////////////////////////
@@ -301,23 +296,15 @@ func (s ecdhScheme) DH(priv KEMPrivateKey, pub KEMPublicKey) ([]byte, error) {
 		return nil, fmt.Errorf("Public key not suitable for ECDH")
 	}
 
-	zzInt, _ := s.curve.Params().ScalarMult(ecdhPub.x, ecdhPub.y, ecdhPriv.d)
-	zz := zzInt.Bytes()
+	x, y := s.curve.Params().ScalarMult(ecdhPub.x, ecdhPub.y, ecdhPriv.d)
+	dh := elliptic.Marshal(ecdhPub.curve, x, y)
 
-	size := (s.curve.Params().BitSize + 7) >> 3
-	pad := make([]byte, size-len(zz))
-	zz = append(pad, zz...)
-
-	return zz, nil
+	return dh, nil
 }
 
 func (s ecdhScheme) PublicKeySize() int {
 	feSize := (s.curve.Params().BitSize + 7) >> 3
 	return 1 + 2*feSize
-}
-
-func (s ecdhScheme) SharedSecretSize() int {
-	return (s.curve.Params().BitSize + 7) >> 3
 }
 
 ///////////////////
@@ -416,10 +403,6 @@ func (s x25519Scheme) PublicKeySize() int {
 	return 32
 }
 
-func (s x25519Scheme) SharedSecretSize() int {
-	return 32
-}
-
 ///////////////////
 // ECDH with X448
 
@@ -515,10 +498,6 @@ func (s x448Scheme) PublicKeySize() int {
 	return 56
 }
 
-func (s x448Scheme) SharedSecretSize() int {
-	return 64
-}
-
 ///////
 // SIKE
 
@@ -539,6 +518,7 @@ func (priv sikePrivateKey) PublicKey() KEMPublicKey {
 
 type sikeScheme struct {
 	field uint8
+	KDF   KDFScheme
 }
 
 func (s sikeScheme) ID() KEMID {
@@ -618,7 +598,7 @@ func (s sikeScheme) Encap(rand io.Reader, pkR KEMPublicKey) ([]byte, []byte, err
 	}
 
 	enc := make([]byte, kem.CiphertextSize())
-	zz := make([]byte, kem.SharedSecretSize())
+	zz := make([]byte, s.KDF.OutputSize())
 	err = kem.Encapsulate(enc, zz, raw.pub)
 	if err != nil {
 		return nil, nil, err
@@ -641,7 +621,7 @@ func (s sikeScheme) Decap(enc []byte, skR KEMPrivateKey) ([]byte, error) {
 		return nil, err
 	}
 
-	zz := make([]byte, kem.SharedSecretSize())
+	zz := make([]byte, s.KDF.OutputSize())
 	err = kem.Decapsulate(zz, raw.priv, raw.pub, enc)
 	if err != nil {
 		return nil, err
@@ -653,10 +633,6 @@ func (s sikeScheme) Decap(enc []byte, skR KEMPrivateKey) ([]byte, error) {
 func (s sikeScheme) PublicKeySize() int {
 	rawPub := sidh.NewPublicKey(s.field, sidh.KeyVariantSike)
 	return rawPub.Size()
-}
-
-func (s sikeScheme) SharedSecretSize() int {
-	panic("Not implemented")
 }
 
 func (s sikeScheme) setEphemeralKeyPair(skE KEMPrivateKey) {
@@ -820,8 +796,8 @@ var kems = map[KEMID]KEMScheme{
 	DHKEM_X448:   &dhkemScheme{group: x448Scheme{}, KDF: hkdfScheme{hash: crypto.SHA512}},
 	DHKEM_P256:   &dhkemScheme{group: ecdhScheme{curve: elliptic.P256()}, KDF: hkdfScheme{hash: crypto.SHA256}},
 	DHKEM_P521:   &dhkemScheme{group: ecdhScheme{curve: elliptic.P521()}, KDF: hkdfScheme{hash: crypto.SHA512}},
-	KEM_SIKE503:  &sikeScheme{field: sidh.Fp503},
-	KEM_SIKE751:  &sikeScheme{field: sidh.Fp751},
+	KEM_SIKE503:  &sikeScheme{field: sidh.Fp503, KDF: hkdfScheme{hash: crypto.SHA512}},
+	KEM_SIKE751:  &sikeScheme{field: sidh.Fp751, KDF: hkdfScheme{hash: crypto.SHA512}},
 }
 
 func newKEMScheme(kemID KEMID) (KEMScheme, bool) {
@@ -835,9 +811,9 @@ func newKEMScheme(kemID KEMID) (KEMScheme, bool) {
 	case DHKEM_P521:
 		return &dhkemScheme{group: ecdhScheme{curve: elliptic.P521()}, KDF: hkdfScheme{hash: crypto.SHA512}}, true
 	case KEM_SIKE503:
-		return &sikeScheme{field: sidh.Fp503}, true
+		return &sikeScheme{field: sidh.Fp503, KDF: hkdfScheme{hash: crypto.SHA512}}, true
 	case KEM_SIKE751:
-		return &sikeScheme{field: sidh.Fp751}, true
+		return &sikeScheme{field: sidh.Fp751, KDF: hkdfScheme{hash: crypto.SHA512}}, true
 	default:
 		return nil, false
 	}
