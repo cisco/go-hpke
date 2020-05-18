@@ -97,7 +97,10 @@ func (s dhkemScheme) Encap(rand io.Reader, pkR KEMPublicKey) ([]byte, []byte, er
 
 	enc := s.group.Marshal(pkE)
 	pkRm := s.group.Marshal(pkR)
-	kemContext := append(enc, pkRm...)
+
+	kemContext := make([]byte, len(enc)+len(pkRm))
+	copy(kemContext, enc)
+	copy(kemContext[len(enc):], pkRm)
 
 	Nzz := s.SharedSecretSize()
 	zz := s.extractAndExpand(dh, kemContext, Nzz)
@@ -117,7 +120,10 @@ func (s dhkemScheme) Decap(enc []byte, skR KEMPrivateKey) ([]byte, error) {
 	}
 
 	pkRm := s.group.Marshal(skR.PublicKey())
-	kemContext := append(enc, pkRm...)
+
+	kemContext := make([]byte, len(enc)+len(pkRm))
+	copy(kemContext, enc)
+	copy(kemContext[len(enc):], pkRm)
 
 	Nzz := s.SharedSecretSize()
 	zz := s.extractAndExpand(dh, kemContext, Nzz)
