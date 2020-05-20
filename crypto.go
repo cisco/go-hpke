@@ -78,8 +78,7 @@ func (s dhkemScheme) getEphemeralKeyPair(rand io.Reader) (KEMPrivateKey, KEMPubl
 }
 
 func (s dhkemScheme) extractAndExpand(dh []byte, kemContext []byte, Nzz int) []byte {
-	zeroBytes := make([]byte, s.KDF.OutputSize())
-	prk := s.KDF.LabeledExtract(zeroBytes, "dh", dh)
+	prk := s.KDF.LabeledExtract(nil, "dh", dh)
 	return s.KDF.LabeledExpand(prk, "prk", kemContext, Nzz)
 }
 
