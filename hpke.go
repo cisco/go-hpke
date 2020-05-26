@@ -141,21 +141,21 @@ type hpkeContext struct {
 }
 
 type contextParameters struct {
-	suite           CipherSuite
-	scheduleContext []byte
-	secret          []byte
+	suite              CipherSuite
+	keyScheduleContext []byte
+	secret             []byte
 }
 
 func (cp contextParameters) aeadKey() []byte {
-	return cp.suite.KDF.LabeledExpand(cp.secret, "key", cp.scheduleContext, cp.suite.AEAD.KeySize())
+	return cp.suite.KDF.LabeledExpand(cp.secret, "key", cp.keyScheduleContext, cp.suite.AEAD.KeySize())
 }
 
 func (cp contextParameters) exporterSecret() []byte {
-	return cp.suite.KDF.LabeledExpand(cp.secret, "exp", cp.scheduleContext, cp.suite.KDF.OutputSize())
+	return cp.suite.KDF.LabeledExpand(cp.secret, "exp", cp.keyScheduleContext, cp.suite.KDF.OutputSize())
 }
 
 func (cp contextParameters) aeadNonce() []byte {
-	return cp.suite.KDF.LabeledExpand(cp.secret, "nonce", cp.scheduleContext, cp.suite.AEAD.NonceSize())
+	return cp.suite.KDF.LabeledExpand(cp.secret, "nonce", cp.keyScheduleContext, cp.suite.AEAD.NonceSize())
 }
 
 type setupParameters struct {
@@ -173,7 +173,7 @@ func keySchedule(suite CipherSuite, mode HPKEMode, zz, info, psk, pskID, pkSm []
 	infoHash := suite.KDF.LabeledExtract(nil, "info_hash", info)
 
 	contextStruct := hpkeContext{suite.KEM.ID(), suite.KDF.ID(), suite.AEAD.ID(), mode, pskIDHash, infoHash}
-	scheduleContext, err := syntax.Marshal(contextStruct)
+	keyScheduleContext, err := syntax.Marshal(contextStruct)
 	if err != nil {
 		return contextParameters{}, err
 	}
@@ -182,9 +182,9 @@ func keySchedule(suite CipherSuite, mode HPKEMode, zz, info, psk, pskID, pkSm []
 	secret := suite.KDF.LabeledExtract(psk_hash, "secret", zz)
 
 	params := contextParameters{
-		suite:           suite,
-		scheduleContext: scheduleContext,
-		secret:          secret,
+		suite:              suite,
+		keyScheduleContext: keyScheduleContext,
+		secret:             secret,
 	}
 
 	return params, nil
