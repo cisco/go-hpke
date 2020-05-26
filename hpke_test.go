@@ -138,22 +138,22 @@ func (etv *encryptionTestVector) UnmarshalJSON(data []byte) error {
 ///////
 // Exporter test vector structures
 type rawExporterTestVector struct {
-	Context      string `json:"context"`
-	ExportLength int    `json:"exportLength"`
-	ExportValue  string `json:"exportValue"`
+	ExportContext string `json:"exportContext"`
+	ExportLength  int    `json:"exportLength"`
+	ExportValue   string `json:"exportValue"`
 }
 
 type exporterTestVector struct {
-	context      []byte
-	exportLength int
-	exportValue  []byte
+	exportContext []byte
+	exportLength  int
+	exportValue   []byte
 }
 
 func (etv exporterTestVector) MarshalJSON() ([]byte, error) {
 	return json.Marshal(rawExporterTestVector{
-		Context:      mustHex(etv.context),
-		ExportLength: etv.exportLength,
-		ExportValue:  mustHex(etv.exportValue),
+		ExportContext: mustHex(etv.exportContext),
+		ExportLength:  etv.exportLength,
+		ExportValue:   mustHex(etv.exportValue),
 	})
 }
 
@@ -164,7 +164,7 @@ func (etv *exporterTestVector) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	etv.context = mustUnhex(nil, raw.Context)
+	etv.exportContext = mustUnhex(nil, raw.ExportContext)
 	etv.exportLength = raw.ExportLength
 	etv.exportValue = mustUnhex(nil, raw.ExportValue)
 	return nil
@@ -181,25 +181,25 @@ type rawTestVector struct {
 	Info   string   `json:"info"`
 
 	// Private keys
-	SKR   string `json:"skR"`
-	SKS   string `json:"skS,omitempty"`
-	SKE   string `json:"skE"`
+	SKR   string `json:"skRm"`
+	SKS   string `json:"skSm,omitempty"`
+	SKE   string `json:"skEm"`
 	PSK   string `json:"psk,omitempty"`
 	PSKID string `json:"pskID,omitempty"`
 
 	// Public keys
-	PKR string `json:"pkR"`
-	PKI string `json:"pkS,omitempty"`
-	PKE string `json:"pkE"`
+	PKR string `json:"pkRm"`
+	PKI string `json:"pkSm,omitempty"`
+	PKE string `json:"pkEm"`
 
 	// Key schedule inputs and computations
-	Enc            string `json:"enc"`
-	Zz             string `json:"zz"`
-	Context        string `json:"context"`
-	Secret         string `json:"secret"`
-	Key            string `json:"key"`
-	Nonce          string `json:"nonce"`
-	ExporterSecret string `json:"exporterSecret"`
+	Enc                string `json:"enc"`
+	Zz                 string `json:"zz"`
+	KeyScheduleContext string `json:"key_schedule_context"`
+	Secret             string `json:"secret"`
+	Key                string `json:"key"`
+	Nonce              string `json:"nonce"`
+	ExporterSecret     string `json:"exporterSecret"`
 
 	Encryptions []encryptionTestVector `json:"encryptions"`
 	Exports     []exporterTestVector   `json:"exports"`
@@ -229,13 +229,13 @@ type testVector struct {
 	pkE KEMPublicKey
 
 	// Key schedule inputs and computations
-	enc            []byte
-	zz             []byte
-	context        []byte
-	secret         []byte
-	key            []byte
-	nonce          []byte
-	exporterSecret []byte
+	enc                []byte
+	zz                 []byte
+	keyScheduleContext []byte
+	secret             []byte
+	key                []byte
+	nonce              []byte
+	exporterSecret     []byte
 
 	encryptions []encryptionTestVector
 	exports     []exporterTestVector
@@ -259,13 +259,13 @@ func (tv testVector) MarshalJSON() ([]byte, error) {
 		PKI: mustMarshalPub(tv.suite, tv.pkS),
 		PKE: mustMarshalPub(tv.suite, tv.pkE),
 
-		Enc:            mustHex(tv.enc),
-		Zz:             mustHex(tv.zz),
-		Context:        mustHex(tv.context),
-		Secret:         mustHex(tv.secret),
-		Key:            mustHex(tv.key),
-		Nonce:          mustHex(tv.nonce),
-		ExporterSecret: mustHex(tv.exporterSecret),
+		Enc:                mustHex(tv.enc),
+		Zz:                 mustHex(tv.zz),
+		KeyScheduleContext: mustHex(tv.keyScheduleContext),
+		Secret:             mustHex(tv.secret),
+		Key:                mustHex(tv.key),
+		Nonce:              mustHex(tv.nonce),
+		ExporterSecret:     mustHex(tv.exporterSecret),
 
 		Encryptions: tv.encryptions,
 		Exports:     tv.exports,
@@ -305,7 +305,7 @@ func (tv *testVector) UnmarshalJSON(data []byte) error {
 
 	tv.enc = mustUnhex(tv.t, raw.Enc)
 	tv.zz = mustUnhex(tv.t, raw.Zz)
-	tv.context = mustUnhex(tv.t, raw.Context)
+	tv.keyScheduleContext = mustUnhex(tv.t, raw.KeyScheduleContext)
 	tv.secret = mustUnhex(tv.t, raw.Secret)
 	tv.key = mustUnhex(tv.t, raw.Key)
 	tv.nonce = mustUnhex(tv.t, raw.Nonce)
@@ -469,7 +469,7 @@ func verifyEncryptions(tv testVector, enc *EncryptContext, dec *DecryptContext) 
 func verifyParameters(tv testVector, ctx cipherContext) {
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'zz'", tv.zz, ctx.setupParams.zz)
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'enc'", tv.enc, ctx.setupParams.enc)
-	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'context'", tv.context, ctx.contextParams.context)
+	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'key_schedule_context'", tv.keyScheduleContext, ctx.contextParams.keyScheduleContext)
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'secret'", tv.secret, ctx.contextParams.secret)
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'key'", tv.key, ctx.key)
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'nonce'", tv.nonce, ctx.nonce)
@@ -544,9 +544,9 @@ func generateExports(t *testing.T, suite CipherSuite, ctxI *EncryptContext, ctxR
 		exportR := ctxR.Export(context, testVectorExportLength)
 		assertBytesEqual(t, suite, "Incorrect export", exportI, exportR)
 		vectors[i] = exporterTestVector{
-			context:      context,
-			exportLength: testVectorExportLength,
-			exportValue:  exportI,
+			exportContext: context,
+			exportLength:  testVectorExportLength,
+			exportValue:   exportI,
 		}
 	}
 
@@ -592,30 +592,30 @@ func generateTestVector(t *testing.T, setup setupMode, kemID KEMID, kdfID KDFID,
 	assertNotError(t, suite, "Error in generateExports", err)
 
 	vector := testVector{
-		t:              t,
-		suite:          suite,
-		mode:           setup.Mode,
-		kemID:          kemID,
-		kdfID:          kdfID,
-		aeadID:         aeadID,
-		info:           info,
-		skR:            skR,
-		pkR:            pkR,
-		skS:            skS,
-		psk:            psk,
-		pskID:          pskID,
-		pkS:            pkS,
-		skE:            skE,
-		pkE:            pkE,
-		enc:            ctxI.setupParams.enc,
-		zz:             ctxI.setupParams.zz,
-		context:        ctxI.contextParams.context,
-		secret:         ctxI.contextParams.secret,
-		key:            ctxI.key,
-		nonce:          ctxI.nonce,
-		exporterSecret: ctxI.exporterSecret,
-		encryptions:    encryptionVectors,
-		exports:        exportVectors,
+		t:                  t,
+		suite:              suite,
+		mode:               setup.Mode,
+		kemID:              kemID,
+		kdfID:              kdfID,
+		aeadID:             aeadID,
+		info:               info,
+		skR:                skR,
+		pkR:                pkR,
+		skS:                skS,
+		psk:                psk,
+		pskID:              pskID,
+		pkS:                pkS,
+		skE:                skE,
+		pkE:                pkE,
+		enc:                ctxI.setupParams.enc,
+		zz:                 ctxI.setupParams.zz,
+		keyScheduleContext: ctxI.contextParams.keyScheduleContext,
+		secret:             ctxI.contextParams.secret,
+		key:                ctxI.key,
+		nonce:              ctxI.nonce,
+		exporterSecret:     ctxI.exporterSecret,
+		encryptions:        encryptionVectors,
+		exports:            exportVectors,
 	}
 
 	return vector

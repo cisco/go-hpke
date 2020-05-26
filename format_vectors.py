@@ -3,8 +3,8 @@ import json
 import textwrap
 
 ordered_keys = [
-    "mode", "kemID", "kdfID", "aeadID", "info", "skR",
-    "skS", "skE", "psk", "pskID", "pkR", "pkS", "pkE",
+    "mode", "kemID", "kdfID", "aeadID", "info", "skRm",
+    "skSm", "skEm", "psk", "pskID", "pkRm", "pkSm", "pkEm",
     "enc", "zz", "context", "secret", "key", "nonce",
     "exporterSecret",
 ]

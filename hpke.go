@@ -141,21 +141,21 @@ type hpkeContext struct {
 }
 
 type contextParameters struct {
-	suite   CipherSuite
-	context []byte
-	secret  []byte
+	suite              CipherSuite
+	keyScheduleContext []byte
+	secret             []byte
 }
 
 func (cp contextParameters) aeadKey() []byte {
-	return cp.suite.KDF.LabeledExpand(cp.secret, "key", cp.context, cp.suite.AEAD.KeySize())
+	return cp.suite.KDF.LabeledExpand(cp.secret, "key", cp.keyScheduleContext, cp.suite.AEAD.KeySize())
 }
 
 func (cp contextParameters) exporterSecret() []byte {
-	return cp.suite.KDF.LabeledExpand(cp.secret, "exp", cp.context, cp.suite.KDF.OutputSize())
+	return cp.suite.KDF.LabeledExpand(cp.secret, "exp", cp.keyScheduleContext, cp.suite.KDF.OutputSize())
 }
 
 func (cp contextParameters) aeadNonce() []byte {
-	return cp.suite.KDF.LabeledExpand(cp.secret, "nonce", cp.context, cp.suite.AEAD.NonceSize())
+	return cp.suite.KDF.LabeledExpand(cp.secret, "nonce", cp.keyScheduleContext, cp.suite.AEAD.NonceSize())
 }
 
 type setupParameters struct {
@@ -169,23 +169,22 @@ func keySchedule(suite CipherSuite, mode HPKEMode, zz, info, psk, pskID, pkSm []
 		return contextParameters{}, err
 	}
 
-	zeroBytes := make([]byte, suite.KDF.OutputSize())
-	pskIDHash := suite.KDF.LabeledExtract(zeroBytes, "pskID_hash", pskID)
-	infoHash := suite.KDF.LabeledExtract(zeroBytes, "info", info)
+	pskIDHash := suite.KDF.LabeledExtract(nil, "pskID_hash", pskID)
+	infoHash := suite.KDF.LabeledExtract(nil, "info_hash", info)
 
 	contextStruct := hpkeContext{suite.KEM.ID(), suite.KDF.ID(), suite.AEAD.ID(), mode, pskIDHash, infoHash}
-	context, err := syntax.Marshal(contextStruct)
+	keyScheduleContext, err := syntax.Marshal(contextStruct)
 	if err != nil {
 		return contextParameters{}, err
 	}
 
-	psk = suite.KDF.LabeledExtract(zeroBytes, "psk_hash", psk)
-	secret := suite.KDF.LabeledExtract(psk, "zz", zz)
+	psk_hash := suite.KDF.LabeledExtract(nil, "psk_hash", psk)
+	secret := suite.KDF.LabeledExtract(psk_hash, "secret", zz)
 
 	params := contextParameters{
-		suite:   suite,
-		context: context,
-		secret:  secret,
+		suite:              suite,
+		keyScheduleContext: keyScheduleContext,
+		secret:             secret,
 	}
 
 	return params, nil
@@ -241,7 +240,7 @@ func (ctx *cipherContext) incrementSeq() {
 }
 
 func (ctx *cipherContext) Export(context []byte, L int) []byte {
-	return ctx.kdf.Expand(ctx.exporterSecret, context, L)
+	return ctx.kdf.LabeledExpand(ctx.exporterSecret, "sec", context, L)
 }
 
 type EncryptContext struct {
@@ -287,7 +286,7 @@ func (ctx *DecryptContext) Open(aad, ct []byte) ([]byte, error) {
 }
 
 func (ctx *DecryptContext) Export(context []byte, L int) []byte {
-	return ctx.kdf.Expand(ctx.exporterSecret, context, L)
+	return ctx.kdf.LabeledExpand(ctx.exporterSecret, "sec", context, L)
 }
 
 ///////
