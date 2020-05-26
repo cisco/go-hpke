@@ -229,13 +229,13 @@ type testVector struct {
 	pkE KEMPublicKey
 
 	// Key schedule inputs and computations
-	enc              []byte
-	zz               []byte
-	schedule_context []byte
-	secret           []byte
-	key              []byte
-	nonce            []byte
-	exporterSecret   []byte
+	enc             []byte
+	zz              []byte
+	scheduleContext []byte
+	secret          []byte
+	key             []byte
+	nonce           []byte
+	exporterSecret  []byte
 
 	encryptions []encryptionTestVector
 	exports     []exporterTestVector
@@ -261,7 +261,7 @@ func (tv testVector) MarshalJSON() ([]byte, error) {
 
 		Enc:             mustHex(tv.enc),
 		Zz:              mustHex(tv.zz),
-		ScheduleContext: mustHex(tv.schedule_context),
+		ScheduleContext: mustHex(tv.scheduleContext),
 		Secret:          mustHex(tv.secret),
 		Key:             mustHex(tv.key),
 		Nonce:           mustHex(tv.nonce),
@@ -305,7 +305,7 @@ func (tv *testVector) UnmarshalJSON(data []byte) error {
 
 	tv.enc = mustUnhex(tv.t, raw.Enc)
 	tv.zz = mustUnhex(tv.t, raw.Zz)
-	tv.schedule_context = mustUnhex(tv.t, raw.ScheduleContext)
+	tv.scheduleContext = mustUnhex(tv.t, raw.ScheduleContext)
 	tv.secret = mustUnhex(tv.t, raw.Secret)
 	tv.key = mustUnhex(tv.t, raw.Key)
 	tv.nonce = mustUnhex(tv.t, raw.Nonce)
@@ -469,7 +469,7 @@ func verifyEncryptions(tv testVector, enc *EncryptContext, dec *DecryptContext) 
 func verifyParameters(tv testVector, ctx cipherContext) {
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'zz'", tv.zz, ctx.setupParams.zz)
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'enc'", tv.enc, ctx.setupParams.enc)
-	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'schedule_context'", tv.schedule_context, ctx.contextParams.schedule_context)
+	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'schedule_context'", tv.scheduleContext, ctx.contextParams.scheduleContext)
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'secret'", tv.secret, ctx.contextParams.secret)
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'key'", tv.key, ctx.key)
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'nonce'", tv.nonce, ctx.nonce)
@@ -592,30 +592,30 @@ func generateTestVector(t *testing.T, setup setupMode, kemID KEMID, kdfID KDFID,
 	assertNotError(t, suite, "Error in generateExports", err)
 
 	vector := testVector{
-		t:                t,
-		suite:            suite,
-		mode:             setup.Mode,
-		kemID:            kemID,
-		kdfID:            kdfID,
-		aeadID:           aeadID,
-		info:             info,
-		skR:              skR,
-		pkR:              pkR,
-		skS:              skS,
-		psk:              psk,
-		pskID:            pskID,
-		pkS:              pkS,
-		skE:              skE,
-		pkE:              pkE,
-		enc:              ctxI.setupParams.enc,
-		zz:               ctxI.setupParams.zz,
-		schedule_context: ctxI.contextParams.schedule_context,
-		secret:           ctxI.contextParams.secret,
-		key:              ctxI.key,
-		nonce:            ctxI.nonce,
-		exporterSecret:   ctxI.exporterSecret,
-		encryptions:      encryptionVectors,
-		exports:          exportVectors,
+		t:               t,
+		suite:           suite,
+		mode:            setup.Mode,
+		kemID:           kemID,
+		kdfID:           kdfID,
+		aeadID:          aeadID,
+		info:            info,
+		skR:             skR,
+		pkR:             pkR,
+		skS:             skS,
+		psk:             psk,
+		pskID:           pskID,
+		pkS:             pkS,
+		skE:             skE,
+		pkE:             pkE,
+		enc:             ctxI.setupParams.enc,
+		zz:              ctxI.setupParams.zz,
+		scheduleContext: ctxI.contextParams.scheduleContext,
+		secret:          ctxI.contextParams.secret,
+		key:             ctxI.key,
+		nonce:           ctxI.nonce,
+		exporterSecret:  ctxI.exporterSecret,
+		encryptions:     encryptionVectors,
+		exports:         exportVectors,
 	}
 
 	return vector
