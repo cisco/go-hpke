@@ -15,5 +15,5 @@ $ HPKE_TEST_VECTORS_OUT=test-vectors.json go test -v -run TestVectorGenerate
 To check test vectors, run:
 
 ```
-$ HPKE_TEST_VECTORS_IN=test-vectors.json go test -v -run TestVectorInterop
+$ HPKE_TEST_VECTORS_IN=test-vectors.json go test -v -run TestVectorVerify
 ```
