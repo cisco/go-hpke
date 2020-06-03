@@ -5,7 +5,7 @@ import textwrap
 ordered_keys = [
     "mode", "kemID", "kdfID", "aeadID", "info", "skRm",
     "skSm", "skEm", "psk", "pskID", "pkRm", "pkSm", "pkEm",
-    "enc", "zz", "context", "secret", "key", "nonce",
+    "enc", "zz", "key_schedule_context", "secret", "key", "nonce",
     "exporterSecret",
 ]
 
