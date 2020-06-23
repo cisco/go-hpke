@@ -18,16 +18,19 @@ func randomBytes(size int) []byte {
 
 func TestKEMSchemes(t *testing.T) {
 	schemes := []KEMScheme{
-		&dhkemScheme{group: x25519Scheme{}, KDF: hkdfScheme{hash: crypto.SHA256}},
-		&dhkemScheme{group: x448Scheme{}, KDF: hkdfScheme{hash: crypto.SHA512}},
-		&dhkemScheme{group: ecdhScheme{curve: elliptic.P256()}, KDF: hkdfScheme{hash: crypto.SHA256}},
-		&dhkemScheme{group: ecdhScheme{curve: elliptic.P521()}, KDF: hkdfScheme{hash: crypto.SHA512}},
+		&dhkemScheme{group: x25519Scheme{KDF: hkdfScheme{hash: crypto.SHA256}}, KDF: hkdfScheme{hash: crypto.SHA256}},
+		&dhkemScheme{group: x448Scheme{KDF: hkdfScheme{hash: crypto.SHA256}}, KDF: hkdfScheme{hash: crypto.SHA512}},
+		&dhkemScheme{group: ecdhScheme{curve: elliptic.P256(), KDF: hkdfScheme{hash: crypto.SHA256}}, KDF: hkdfScheme{hash: crypto.SHA256}},
+		&dhkemScheme{group: ecdhScheme{curve: elliptic.P521(), KDF: hkdfScheme{hash: crypto.SHA256}}, KDF: hkdfScheme{hash: crypto.SHA512}},
 		&sikeScheme{field: sidh.Fp503, KDF: hkdfScheme{hash: crypto.SHA512}},
 		&sikeScheme{field: sidh.Fp751, KDF: hkdfScheme{hash: crypto.SHA512}},
 	}
 
 	for i, s := range schemes {
-		skR, pkR, err := s.GenerateKeyPair(rand.Reader)
+		ikm := make([]byte, s.PrivateKeySize())
+		rand.Reader.Read(ikm)
+
+		skR, pkR, err := s.DeriveKeyPair(ikm)
 		if err != nil {
 			t.Fatalf("[%d] Error generating KEM key pair: %v", i, err)
 		}
@@ -50,25 +53,28 @@ func TestKEMSchemes(t *testing.T) {
 
 func TestDHSchemes(t *testing.T) {
 	schemes := []dhScheme{
-		ecdhScheme{curve: elliptic.P256()},
-		ecdhScheme{curve: elliptic.P521()},
-		x25519Scheme{},
-		x448Scheme{},
+		ecdhScheme{curve: elliptic.P256(), KDF: hkdfScheme{hash: crypto.SHA256}},
+		ecdhScheme{curve: elliptic.P521(), KDF: hkdfScheme{hash: crypto.SHA512}},
+		x25519Scheme{KDF: hkdfScheme{hash: crypto.SHA256}},
+		x448Scheme{KDF: hkdfScheme{hash: crypto.SHA512}},
 	}
 
 	for i, s := range schemes {
-		skA, pkA, err := s.GenerateKeyPair(rand.Reader)
+		ikm := make([]byte, s.PrivateKeySize())
+		rand.Reader.Read(ikm)
+		skA, pkA, err := s.DeriveKeyPair(ikm)
 		if err != nil {
 			t.Fatalf("[%d] Error generating DH key pair: %v", i, err)
 		}
 
-		skB, pkB, err := s.GenerateKeyPair(rand.Reader)
+		rand.Reader.Read(ikm)
+		skB, pkB, err := s.DeriveKeyPair(ikm)
 		if err != nil {
 			t.Fatalf("[%d] Error generating DH key pair: %v", i, err)
 		}
 
-		enc := s.Marshal(pkA)
-		_, err = s.Unmarshal(enc)
+		enc := s.Serialize(pkA)
+		_, err = s.Deserialize(enc)
 		if err != nil {
 			t.Fatalf("[%d] Error parsing DH public key: %v", i, err)
 		}
@@ -87,8 +93,8 @@ func TestDHSchemes(t *testing.T) {
 			t.Fatalf("[%d] Asymmetric DH results [%x] != [%x]", i, zzAB, zzBA)
 		}
 
-		if len(s.Marshal(pkA)) != len(s.Marshal(pkB)) {
-			t.Fatalf("[%d] Non-constant public key size [%x] != [%x]", i, len(s.Marshal(pkA)), len(s.Marshal(pkB)))
+		if len(s.Serialize(pkA)) != len(s.Serialize(pkB)) {
+			t.Fatalf("[%d] Non-constant public key size [%x] != [%x]", i, len(s.Serialize(pkA)), len(s.Serialize(pkB)))
 		}
 	}
 }
