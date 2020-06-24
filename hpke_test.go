@@ -53,32 +53,6 @@ func mustHex(d []byte) string {
 	return hex.EncodeToString(d)
 }
 
-func mustDeserializePriv(t *testing.T, suite CipherSuite, h string, required bool) KEMPrivateKey {
-	skm := mustUnhex(t, h)
-	sk, err := suite.KEM.DeserializePrivate(skm)
-	if required {
-		fatalOnError(t, err, "DeserilizePrivate failed")
-	}
-	return sk
-}
-
-func mustSerializePriv(suite CipherSuite, priv KEMPrivateKey) string {
-	return mustHex(suite.KEM.SerializePrivate(priv))
-}
-
-func mustDeserializePub(t *testing.T, suite CipherSuite, h string, required bool) KEMPublicKey {
-	pkm := mustUnhex(t, h)
-	pk, err := suite.KEM.Deserialize(pkm)
-	if required {
-		fatalOnError(t, err, "Deserialize failed")
-	}
-	return pk
-}
-
-func mustSerializePub(suite CipherSuite, pub KEMPublicKey) string {
-	return mustHex(suite.KEM.Serialize(pub))
-}
-
 func mustGenerateKeyPair(t *testing.T, suite CipherSuite) (KEMPrivateKey, KEMPublicKey, []byte) {
 	ikm := make([]byte, suite.KEM.PrivateKeySize())
 	rand.Reader.Read(ikm)
