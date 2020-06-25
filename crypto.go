@@ -88,8 +88,8 @@ func (s dhkemScheme) getEphemeralKeyPair(rand io.Reader) (KEMPrivateKey, KEMPubl
 func (s dhkemScheme) extractAndExpand(dh []byte, kemContext []byte, Nzz int) []byte {
 	idBuffer := make([]byte, 2)
 	binary.BigEndian.PutUint16(idBuffer, uint16(s.ID()))
-	prk := s.group.internalKDF().LabeledExtract(nil, string(idBuffer)+"prk", dh)
-	return s.group.internalKDF().LabeledExpand(prk, "zz", kemContext, Nzz)
+	eae_prk := s.group.internalKDF().LabeledExtract(nil, string(idBuffer)+"eae_prk", dh)
+	return s.group.internalKDF().LabeledExpand(eae_prk, "zz", kemContext, Nzz)
 }
 
 func (s dhkemScheme) Encap(rand io.Reader, pkR KEMPublicKey) ([]byte, []byte, error) {
