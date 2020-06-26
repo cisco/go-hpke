@@ -4,9 +4,12 @@ import textwrap
 
 ordered_keys = [
     # Mode and ciphersuite parameters
-    "mode", "kemID", "kdfID", "aeadID", "info", "seedR",
+    "mode", "kemID", "kdfID", "aeadID", "info",
     # Private key material
-    "seedS", "seedE", "seedR", "psk", "pskID", 
+    "seedE", "pkE", "skE",
+    "seedR", "pkR", "skR",
+    "seedS", "pkS", "skS",
+    "psk", "pskID",
     # Derived context
     "enc", "zz", "keyScheduleContext", "secret", "key", "nonce", "exporterSecret",
 ]
