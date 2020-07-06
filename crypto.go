@@ -86,10 +86,9 @@ func (s dhkemScheme) getEphemeralKeyPair(rand io.Reader) (KEMPrivateKey, KEMPubl
 }
 
 func (s dhkemScheme) extractAndExpand(dh []byte, kemContext []byte, Nzz int) []byte {
-	idBuffer := make([]byte, 2)
-	binary.BigEndian.PutUint16(idBuffer, uint16(s.ID()))
-	eae_prk := s.group.internalKDF().LabeledExtract(nil, string(idBuffer)+"eae_prk", dh)
-	return s.group.internalKDF().LabeledExpand(eae_prk, "zz", kemContext, Nzz)
+	suiteID := s.group.internalKDF().kemID()
+	eae_prk := s.group.internalKDF().LabeledExtract(nil, suiteID, "eae_prk", dh)
+	return s.group.internalKDF().LabeledExpand(eae_prk, suiteID, "zz", kemContext, Nzz)
 }
 
 func (s dhkemScheme) Encap(rand io.Reader, pkR KEMPublicKey) ([]byte, []byte, error) {
@@ -267,17 +266,15 @@ func (s ecdhScheme) privateKeyBitmask() uint8 {
 }
 
 func (s ecdhScheme) DeriveKeyPair(ikm []byte) (KEMPrivateKey, KEMPublicKey, error) {
-	idBuffer := make([]byte, 2)
-	binary.BigEndian.PutUint16(idBuffer, uint16(s.ID()))
-
-	dkp_prk := s.KDF.LabeledExtract(nil, string(idBuffer)+"dkp_prk", ikm)
+	suiteID := s.KDF.kemID()
+	dkp_prk := s.KDF.LabeledExtract(nil, suiteID, "dkp_prk", ikm)
 	counter := 0
 	for {
 		if counter > 255 {
 			return nil, nil, fmt.Errorf("Error deriving key pair")
 		}
 
-		bytes := s.KDF.LabeledExpand(dkp_prk, "candidate", []byte{uint8(counter)}, s.PrivateKeySize())
+		bytes := s.KDF.LabeledExpand(dkp_prk, suiteID, "candidate", []byte{uint8(counter)}, s.PrivateKeySize())
 		bytes[0] = bytes[0] & s.privateKeyBitmask()
 
 		sk, err := s.DeserializePrivate(bytes)
@@ -385,10 +382,9 @@ func (s x25519Scheme) ID() KEMID {
 }
 
 func (s x25519Scheme) DeriveKeyPair(ikm []byte) (KEMPrivateKey, KEMPublicKey, error) {
-	idBuffer := make([]byte, 2)
-	binary.BigEndian.PutUint16(idBuffer, uint16(s.ID()))
-	dkp_prk := s.KDF.LabeledExtract(nil, string(idBuffer)+"dkp_prk", ikm)
-	sk_bytes := s.KDF.LabeledExpand(dkp_prk, "sk", nil, s.PrivateKeySize())
+	suiteID := s.KDF.kemID()
+	dkp_prk := s.KDF.LabeledExtract(nil, suiteID, "dkp_prk", ikm)
+	sk_bytes := s.KDF.LabeledExpand(dkp_prk, suiteID, "sk", nil, s.PrivateKeySize())
 	sk, err := s.DeserializePrivate(sk_bytes)
 	if err != nil {
 		return nil, nil, err
@@ -493,10 +489,9 @@ func (s x448Scheme) ID() KEMID {
 }
 
 func (s x448Scheme) DeriveKeyPair(ikm []byte) (KEMPrivateKey, KEMPublicKey, error) {
-	idBuffer := make([]byte, 2)
-	binary.BigEndian.PutUint16(idBuffer, uint16(s.ID()))
-	dkp_prk := s.KDF.LabeledExtract(nil, string(idBuffer)+"dkp_prk", ikm)
-	sk_bytes := s.KDF.LabeledExpand(dkp_prk, "sk", nil, s.PrivateKeySize())
+	suiteID := s.KDF.kemID()
+	dkp_prk := s.KDF.LabeledExtract(nil, suiteID, "dkp_prk", ikm)
+	sk_bytes := s.KDF.LabeledExpand(dkp_prk, suiteID, "sk", nil, s.PrivateKeySize())
 	sk, err := s.DeserializePrivate(sk_bytes)
 	if err != nil {
 		return nil, nil, err
@@ -818,6 +813,12 @@ func (s hkdfScheme) ID() KDFID {
 	panic(fmt.Sprintf("Unsupported hash: %d", s.hash))
 }
 
+func (s hkdfScheme) kemID() []byte {
+	idBuffer := make([]byte, 2)
+	binary.BigEndian.PutUint16(idBuffer, uint16(s.ID()))
+	return append([]byte("KEM"), idBuffer...)
+}
+
 func (s hkdfScheme) Hash(message []byte) []byte {
 	h := s.hash.New()
 	h.Write(message)
@@ -855,20 +856,25 @@ func (s hkdfScheme) Expand(prk, info []byte, outLen int) []byte {
 	return out[:outLen]
 }
 
-func (s hkdfScheme) LabeledExtract(salt []byte, label string, ikm []byte) []byte {
-	labeledIKM := append([]byte(rfcLabel+" "+label), ikm...)
+func (s hkdfScheme) LabeledExtract(salt []byte, suiteID []byte, label string, ikm []byte) []byte {
+	labeledIKM := append([]byte(rfcLabel+" "), suiteID...)
+	labeledIKM = append(labeledIKM, []byte(label)...)
+	labeledIKM = append(labeledIKM, ikm...)
 	return s.Extract(salt, labeledIKM)
 }
 
-func (s hkdfScheme) LabeledExpand(prk []byte, label string, info []byte, L int) []byte {
+func (s hkdfScheme) LabeledExpand(prk []byte, suiteID []byte, label string, info []byte, L int) []byte {
 	if L > (1 << 16) {
 		panic("Expand length cannot be larger than 2^16")
 	}
 
 	lengthBuffer := make([]byte, 2)
 	binary.BigEndian.PutUint16(lengthBuffer, uint16(L))
-	labeledLength := append(lengthBuffer, []byte(rfcLabel+" "+label)...)
-	labeledInfo := append(labeledLength, info...)
+	labeledLength := append(lengthBuffer, []byte(rfcLabel+" ")...)
+	labeledInfo := append(labeledLength, suiteID...)
+	labeledInfo = append(labeledInfo, []byte(label)...)
+	labeledInfo = append(labeledInfo, info...)
+
 	return s.Expand(prk, labeledInfo, L)
 }
 
