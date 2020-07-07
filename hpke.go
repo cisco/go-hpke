@@ -135,9 +135,6 @@ func verifyPSKInputs(suite CipherSuite, mode HPKEMode, psk, pskID []byte) error 
 }
 
 type hpkeContext struct {
-	kemID     KEMID
-	kdfID     KDFID
-	aeadID    AEADID
 	mode      HPKEMode
 	pskIDHash []byte `tls:"head=none"`
 	infoHash  []byte `tls:"head=none"`
@@ -176,14 +173,14 @@ func keySchedule(suite CipherSuite, mode HPKEMode, zz, info, psk, pskID []byte) 
 	pskIDHash := suite.KDF.LabeledExtract(nil, suiteID, "pskID_hash", pskID)
 	infoHash := suite.KDF.LabeledExtract(nil, suiteID, "info_hash", info)
 
-	contextStruct := hpkeContext{suite.KEM.ID(), suite.KDF.ID(), suite.AEAD.ID(), mode, pskIDHash, infoHash}
+	contextStruct := hpkeContext{mode, pskIDHash, infoHash}
 	keyScheduleContext, err := syntax.Marshal(contextStruct)
 	if err != nil {
 		return contextParameters{}, err
 	}
 
-	psk_hash := suite.KDF.LabeledExtract(nil, suiteID, "psk_hash", psk)
-	secret := suite.KDF.LabeledExtract(psk_hash, suiteID, "secret", zz)
+	pskHash := suite.KDF.LabeledExtract(nil, suiteID, "psk_hash", psk)
+	secret := suite.KDF.LabeledExtract(pskHash, suiteID, "secret", zz)
 
 	params := contextParameters{
 		suite:              suite,
