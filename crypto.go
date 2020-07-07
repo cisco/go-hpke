@@ -86,7 +86,7 @@ func (s dhkemScheme) getEphemeralKeyPair(rand io.Reader) (KEMPrivateKey, KEMPubl
 }
 
 func (s dhkemScheme) extractAndExpand(dh []byte, kemContext []byte, Nzz int) []byte {
-	suiteID := s.group.internalKDF().kemID()
+	suiteID := kemSuiteFromID(s.ID())
 	eae_prk := s.group.internalKDF().LabeledExtract(nil, suiteID, "eae_prk", dh)
 	return s.group.internalKDF().LabeledExpand(eae_prk, suiteID, "zz", kemContext, Nzz)
 }
@@ -266,7 +266,7 @@ func (s ecdhScheme) privateKeyBitmask() uint8 {
 }
 
 func (s ecdhScheme) DeriveKeyPair(ikm []byte) (KEMPrivateKey, KEMPublicKey, error) {
-	suiteID := s.KDF.kemID()
+	suiteID := kemSuiteFromID(s.ID())
 	dkp_prk := s.KDF.LabeledExtract(nil, suiteID, "dkp_prk", ikm)
 	counter := 0
 	for {
@@ -382,7 +382,7 @@ func (s x25519Scheme) ID() KEMID {
 }
 
 func (s x25519Scheme) DeriveKeyPair(ikm []byte) (KEMPrivateKey, KEMPublicKey, error) {
-	suiteID := s.KDF.kemID()
+	suiteID := kemSuiteFromID(s.ID())
 	dkp_prk := s.KDF.LabeledExtract(nil, suiteID, "dkp_prk", ikm)
 	sk_bytes := s.KDF.LabeledExpand(dkp_prk, suiteID, "sk", nil, s.PrivateKeySize())
 	sk, err := s.DeserializePrivate(sk_bytes)
@@ -489,7 +489,7 @@ func (s x448Scheme) ID() KEMID {
 }
 
 func (s x448Scheme) DeriveKeyPair(ikm []byte) (KEMPrivateKey, KEMPublicKey, error) {
-	suiteID := s.KDF.kemID()
+	suiteID := kemSuiteFromID(s.ID())
 	dkp_prk := s.KDF.LabeledExtract(nil, suiteID, "dkp_prk", ikm)
 	sk_bytes := s.KDF.LabeledExpand(dkp_prk, suiteID, "sk", nil, s.PrivateKeySize())
 	sk, err := s.DeserializePrivate(sk_bytes)
@@ -813,12 +813,6 @@ func (s hkdfScheme) ID() KDFID {
 	panic(fmt.Sprintf("Unsupported hash: %d", s.hash))
 }
 
-func (s hkdfScheme) kemID() []byte {
-	idBuffer := make([]byte, 2)
-	binary.BigEndian.PutUint16(idBuffer, uint16(s.ID()))
-	return append([]byte("KEM"), idBuffer...)
-}
-
 func (s hkdfScheme) Hash(message []byte) []byte {
 	h := s.hash.New()
 	h.Write(message)
@@ -979,4 +973,13 @@ func AssembleCipherSuite(kemID KEMID, kdfID KDFID, aeadID AEADID) (CipherSuite, 
 		KDF:  kdf,
 		AEAD: aead,
 	}, nil
+}
+
+//////////
+// Helpers
+
+func kemSuiteFromID(id KEMID) []byte {
+	idBuffer := make([]byte, 2)
+	binary.BigEndian.PutUint16(idBuffer, uint16(id))
+	return append([]byte("KEM"), idBuffer...)
 }

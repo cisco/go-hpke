@@ -52,8 +52,6 @@ type KDFScheme interface {
 	LabeledExtract(salt []byte, suiteID []byte, label string, ikm []byte) []byte
 	LabeledExpand(prk []byte, suiteID []byte, label string, info []byte, L int) []byte
 	OutputSize() int
-
-	kemID() []byte
 }
 
 type AEADScheme interface {
@@ -69,7 +67,7 @@ type CipherSuite struct {
 	AEAD AEADScheme
 }
 
-func (suite CipherSuite) hpkeID() []byte {
+func (suite CipherSuite) hpkeSuiteID() []byte {
 	suiteID := make([]byte, 6)
 	binary.BigEndian.PutUint16(suiteID, uint16(suite.KEM.ID()))
 	binary.BigEndian.PutUint16(suiteID[2:], uint16(suite.KDF.ID()))
@@ -152,15 +150,15 @@ type contextParameters struct {
 }
 
 func (cp contextParameters) aeadKey() []byte {
-	return cp.suite.KDF.LabeledExpand(cp.secret, cp.suite.hpkeID(), "key", cp.keyScheduleContext, cp.suite.AEAD.KeySize())
+	return cp.suite.KDF.LabeledExpand(cp.secret, cp.suite.hpkeSuiteID(), "key", cp.keyScheduleContext, cp.suite.AEAD.KeySize())
 }
 
 func (cp contextParameters) exporterSecret() []byte {
-	return cp.suite.KDF.LabeledExpand(cp.secret, cp.suite.hpkeID(), "exp", cp.keyScheduleContext, cp.suite.KDF.OutputSize())
+	return cp.suite.KDF.LabeledExpand(cp.secret, cp.suite.hpkeSuiteID(), "exp", cp.keyScheduleContext, cp.suite.KDF.OutputSize())
 }
 
 func (cp contextParameters) aeadNonce() []byte {
-	return cp.suite.KDF.LabeledExpand(cp.secret, cp.suite.hpkeID(), "nonce", cp.keyScheduleContext, cp.suite.AEAD.NonceSize())
+	return cp.suite.KDF.LabeledExpand(cp.secret, cp.suite.hpkeSuiteID(), "nonce", cp.keyScheduleContext, cp.suite.AEAD.NonceSize())
 }
 
 type setupParameters struct {
@@ -174,7 +172,7 @@ func keySchedule(suite CipherSuite, mode HPKEMode, zz, info, psk, pskID []byte) 
 		return contextParameters{}, err
 	}
 
-	suiteID := suite.hpkeID()
+	suiteID := suite.hpkeSuiteID()
 	pskIDHash := suite.KDF.LabeledExtract(nil, suiteID, "pskID_hash", pskID)
 	infoHash := suite.KDF.LabeledExtract(nil, suiteID, "info_hash", info)
 
@@ -246,7 +244,7 @@ func (ctx *cipherContext) incrementSeq() {
 }
 
 func (ctx *cipherContext) Export(context []byte, L int) []byte {
-	return ctx.suite.KDF.LabeledExpand(ctx.exporterSecret, ctx.suite.hpkeID(), "sec", context, L)
+	return ctx.suite.KDF.LabeledExpand(ctx.exporterSecret, ctx.suite.hpkeSuiteID(), "sec", context, L)
 }
 
 type EncryptContext struct {
@@ -292,7 +290,7 @@ func (ctx *DecryptContext) Open(aad, ct []byte) ([]byte, error) {
 }
 
 func (ctx *DecryptContext) Export(context []byte, L int) []byte {
-	return ctx.suite.KDF.LabeledExpand(ctx.exporterSecret, ctx.suite.hpkeID(), "sec", context, L)
+	return ctx.suite.KDF.LabeledExpand(ctx.exporterSecret, ctx.suite.hpkeSuiteID(), "sec", context, L)
 }
 
 ///////
