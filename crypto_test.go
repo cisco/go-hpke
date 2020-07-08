@@ -18,8 +18,8 @@ func randomBytes(size int) []byte {
 
 func TestKEMSchemes(t *testing.T) {
 	schemes := []KEMScheme{
-		&dhkemScheme{group: x25519Scheme{KDF: hkdfScheme{hash: crypto.SHA256}}},
-		&dhkemScheme{group: x448Scheme{KDF: hkdfScheme{hash: crypto.SHA256}}},
+		&dhkemScheme{group: x25519Scheme{}},
+		&dhkemScheme{group: x448Scheme{}},
 		&dhkemScheme{group: ecdhScheme{curve: elliptic.P256(), KDF: hkdfScheme{hash: crypto.SHA256}}},
 		&dhkemScheme{group: ecdhScheme{curve: elliptic.P521(), KDF: hkdfScheme{hash: crypto.SHA256}}},
 		&sikeScheme{field: sidh.Fp503, KDF: hkdfScheme{hash: crypto.SHA512}},
@@ -55,8 +55,8 @@ func TestDHSchemes(t *testing.T) {
 	schemes := []dhScheme{
 		ecdhScheme{curve: elliptic.P256(), KDF: hkdfScheme{hash: crypto.SHA256}},
 		ecdhScheme{curve: elliptic.P521(), KDF: hkdfScheme{hash: crypto.SHA512}},
-		x25519Scheme{KDF: hkdfScheme{hash: crypto.SHA256}},
-		x448Scheme{KDF: hkdfScheme{hash: crypto.SHA512}},
+		x25519Scheme{},
+		x448Scheme{},
 	}
 
 	for i, s := range schemes {

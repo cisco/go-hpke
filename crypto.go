@@ -369,12 +369,11 @@ type x25519PublicKey struct {
 }
 
 type x25519Scheme struct {
-	KDF KDFScheme
 	skE KEMPrivateKey
 }
 
 func (s x25519Scheme) internalKDF() KDFScheme {
-	return s.KDF
+	return hkdfScheme{hash: crypto.SHA256}
 }
 
 func (s x25519Scheme) ID() KEMID {
@@ -383,8 +382,8 @@ func (s x25519Scheme) ID() KEMID {
 
 func (s x25519Scheme) DeriveKeyPair(ikm []byte) (KEMPrivateKey, KEMPublicKey, error) {
 	suiteID := kemSuiteFromID(s.ID())
-	dkp_prk := s.KDF.LabeledExtract(nil, suiteID, "dkp_prk", ikm)
-	sk_bytes := s.KDF.LabeledExpand(dkp_prk, suiteID, "sk", nil, s.PrivateKeySize())
+	dkp_prk := s.internalKDF().LabeledExtract(nil, suiteID, "dkp_prk", ikm)
+	sk_bytes := s.internalKDF().LabeledExpand(dkp_prk, suiteID, "sk", nil, s.PrivateKeySize())
 	sk, err := s.DeserializePrivate(sk_bytes)
 	if err != nil {
 		return nil, nil, err
@@ -476,12 +475,11 @@ type x448PublicKey struct {
 }
 
 type x448Scheme struct {
-	KDF KDFScheme
 	skE KEMPrivateKey
 }
 
 func (s x448Scheme) internalKDF() KDFScheme {
-	return s.KDF
+	return hkdfScheme{hash: crypto.SHA512}
 }
 
 func (s x448Scheme) ID() KEMID {
@@ -490,8 +488,8 @@ func (s x448Scheme) ID() KEMID {
 
 func (s x448Scheme) DeriveKeyPair(ikm []byte) (KEMPrivateKey, KEMPublicKey, error) {
 	suiteID := kemSuiteFromID(s.ID())
-	dkp_prk := s.KDF.LabeledExtract(nil, suiteID, "dkp_prk", ikm)
-	sk_bytes := s.KDF.LabeledExpand(dkp_prk, suiteID, "sk", nil, s.PrivateKeySize())
+	dkp_prk := s.internalKDF().LabeledExtract(nil, suiteID, "dkp_prk", ikm)
+	sk_bytes := s.internalKDF().LabeledExpand(dkp_prk, suiteID, "sk", nil, s.PrivateKeySize())
 	sk, err := s.DeserializePrivate(sk_bytes)
 	if err != nil {
 		return nil, nil, err
@@ -891,10 +889,10 @@ const (
 )
 
 var kems = map[KEMID]KEMScheme{
-	DHKEM_X25519: &dhkemScheme{group: x25519Scheme{KDF: hkdfScheme{hash: crypto.SHA256}}},
-	DHKEM_X448:   &dhkemScheme{group: x448Scheme{KDF: hkdfScheme{hash: crypto.SHA256}}},
+	DHKEM_X25519: &dhkemScheme{group: x25519Scheme{}},
+	DHKEM_X448:   &dhkemScheme{group: x448Scheme{}},
 	DHKEM_P256:   &dhkemScheme{group: ecdhScheme{curve: elliptic.P256(), KDF: hkdfScheme{hash: crypto.SHA256}}},
-	DHKEM_P521:   &dhkemScheme{group: ecdhScheme{curve: elliptic.P521(), KDF: hkdfScheme{hash: crypto.SHA256}}},
+	DHKEM_P521:   &dhkemScheme{group: ecdhScheme{curve: elliptic.P521(), KDF: hkdfScheme{hash: crypto.SHA512}}},
 	KEM_SIKE503:  &sikeScheme{field: sidh.Fp503, KDF: hkdfScheme{hash: crypto.SHA512}},
 	KEM_SIKE751:  &sikeScheme{field: sidh.Fp751, KDF: hkdfScheme{hash: crypto.SHA512}},
 }
@@ -902,9 +900,9 @@ var kems = map[KEMID]KEMScheme{
 func newKEMScheme(kemID KEMID) (KEMScheme, bool) {
 	switch kemID {
 	case DHKEM_X25519:
-		return &dhkemScheme{group: x25519Scheme{KDF: hkdfScheme{hash: crypto.SHA256}}}, true
+		return &dhkemScheme{group: x25519Scheme{}}, true
 	case DHKEM_X448:
-		return &dhkemScheme{group: x448Scheme{KDF: hkdfScheme{hash: crypto.SHA512}}}, true
+		return &dhkemScheme{group: x448Scheme{}}, true
 	case DHKEM_P256:
 		return &dhkemScheme{group: ecdhScheme{curve: elliptic.P256(), KDF: hkdfScheme{hash: crypto.SHA256}}}, true
 	case DHKEM_P521:

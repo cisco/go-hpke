@@ -67,7 +67,7 @@ type CipherSuite struct {
 	AEAD AEADScheme
 }
 
-func (suite CipherSuite) hpkeSuiteID() []byte {
+func (suite CipherSuite) ID() []byte {
 	suiteID := make([]byte, 6)
 	binary.BigEndian.PutUint16(suiteID, uint16(suite.KEM.ID()))
 	binary.BigEndian.PutUint16(suiteID[2:], uint16(suite.KDF.ID()))
@@ -75,13 +75,13 @@ func (suite CipherSuite) hpkeSuiteID() []byte {
 	return append([]byte("HPKE"), suiteID...)
 }
 
-type HPKEMode uint8
+type Mode uint8
 
 const (
-	modeBase    HPKEMode = 0x00
-	modePSK     HPKEMode = 0x01
-	modeAuth    HPKEMode = 0x02
-	modeAuthPSK HPKEMode = 0x03
+	modeBase    Mode = 0x00
+	modePSK     Mode = 0x01
+	modeAuth    Mode = 0x02
+	modeAuthPSK Mode = 0x03
 )
 
 func logString(val string) {
@@ -107,35 +107,28 @@ func defaultPSKID(suite CipherSuite) []byte {
 	return []byte{}
 }
 
-func verifyPSKInputs(suite CipherSuite, mode HPKEMode, psk, pskID []byte) error {
+func verifyPSKInputs(suite CipherSuite, mode Mode, psk, pskID []byte) error {
 	defaultPSK := defaultPSK(suite)
 	defaultPSKID := defaultPSKID(suite)
+	pskMode := map[Mode]bool{modePSK: true, modeAuthPSK: true}
 
 	gotPSK := !bytes.Equal(psk, defaultPSK)
 	gotPSKID := !bytes.Equal(pskID, defaultPSKID)
-	if gotPSK != gotPSKID {
-		return fmt.Errorf("Inconsistent PSK inputs [%d] [%v] [%v]", mode, gotPSK, gotPSKID)
-	}
 
-	if gotPSK {
-		switch mode {
-		case modeBase:
-		case modeAuth:
-			return fmt.Errorf("PSK input provided when not needed [%d]", mode)
-		}
-	} else {
-		switch mode {
-		case modePSK:
-		case modeAuthPSK:
-			return fmt.Errorf("Missing required PSK input [%d]", mode)
-		}
+	switch {
+	case gotPSK != gotPSKID:
+		return fmt.Errorf("Inconsistent PSK inputs [%d] [%v] [%v]", mode, gotPSK, gotPSKID)
+	case gotPSK && !pskMode[mode]:
+		return fmt.Errorf("PSK input provided when not needed [%d]", mode)
+	case !gotPSK && pskMode[mode]:
+		return fmt.Errorf("Missing required PSK input [%d]", mode)
 	}
 
 	return nil
 }
 
 type hpkeContext struct {
-	mode      HPKEMode
+	mode      Mode
 	pskIDHash []byte `tls:"head=none"`
 	infoHash  []byte `tls:"head=none"`
 }
@@ -147,15 +140,15 @@ type contextParameters struct {
 }
 
 func (cp contextParameters) aeadKey() []byte {
-	return cp.suite.KDF.LabeledExpand(cp.secret, cp.suite.hpkeSuiteID(), "key", cp.keyScheduleContext, cp.suite.AEAD.KeySize())
+	return cp.suite.KDF.LabeledExpand(cp.secret, cp.suite.ID(), "key", cp.keyScheduleContext, cp.suite.AEAD.KeySize())
 }
 
 func (cp contextParameters) exporterSecret() []byte {
-	return cp.suite.KDF.LabeledExpand(cp.secret, cp.suite.hpkeSuiteID(), "exp", cp.keyScheduleContext, cp.suite.KDF.OutputSize())
+	return cp.suite.KDF.LabeledExpand(cp.secret, cp.suite.ID(), "exp", cp.keyScheduleContext, cp.suite.KDF.OutputSize())
 }
 
 func (cp contextParameters) aeadNonce() []byte {
-	return cp.suite.KDF.LabeledExpand(cp.secret, cp.suite.hpkeSuiteID(), "nonce", cp.keyScheduleContext, cp.suite.AEAD.NonceSize())
+	return cp.suite.KDF.LabeledExpand(cp.secret, cp.suite.ID(), "nonce", cp.keyScheduleContext, cp.suite.AEAD.NonceSize())
 }
 
 type setupParameters struct {
@@ -163,13 +156,13 @@ type setupParameters struct {
 	enc []byte
 }
 
-func keySchedule(suite CipherSuite, mode HPKEMode, zz, info, psk, pskID []byte) (contextParameters, error) {
+func keySchedule(suite CipherSuite, mode Mode, zz, info, psk, pskID []byte) (contextParameters, error) {
 	err := verifyPSKInputs(suite, mode, psk, pskID)
 	if err != nil {
 		return contextParameters{}, err
 	}
 
-	suiteID := suite.hpkeSuiteID()
+	suiteID := suite.ID()
 	pskIDHash := suite.KDF.LabeledExtract(nil, suiteID, "pskID_hash", pskID)
 	infoHash := suite.KDF.LabeledExtract(nil, suiteID, "info_hash", info)
 
@@ -208,14 +201,14 @@ type cipherContext struct {
 func newCipherContext(suite CipherSuite, setupParams setupParameters, contextParams contextParameters) (cipherContext, error) {
 	key := contextParams.aeadKey()
 	nonce := contextParams.aeadNonce()
-	exporterSecrert := contextParams.exporterSecret()
+	exporterSecret := contextParams.exporterSecret()
 
 	aead, err := suite.AEAD.New(key)
 	if err != nil {
 		return cipherContext{}, err
 	}
 
-	return cipherContext{key, nonce, exporterSecrert, aead, 0, suite, nil, setupParams, contextParams}, nil
+	return cipherContext{key, nonce, exporterSecret, aead, 0, suite, nil, setupParams, contextParams}, nil
 }
 
 func (ctx *cipherContext) computeNonce() []byte {
@@ -241,7 +234,7 @@ func (ctx *cipherContext) incrementSeq() {
 }
 
 func (ctx *cipherContext) Export(context []byte, L int) []byte {
-	return ctx.suite.KDF.LabeledExpand(ctx.exporterSecret, ctx.suite.hpkeSuiteID(), "sec", context, L)
+	return ctx.suite.KDF.LabeledExpand(ctx.exporterSecret, ctx.suite.ID(), "sec", context, L)
 }
 
 type EncryptContext struct {
@@ -287,7 +280,7 @@ func (ctx *DecryptContext) Open(aad, ct []byte) ([]byte, error) {
 }
 
 func (ctx *DecryptContext) Export(context []byte, L int) []byte {
-	return ctx.suite.KDF.LabeledExpand(ctx.exporterSecret, ctx.suite.hpkeSuiteID(), "sec", context, L)
+	return ctx.suite.KDF.LabeledExpand(ctx.exporterSecret, ctx.suite.ID(), "sec", context, L)
 }
 
 ///////

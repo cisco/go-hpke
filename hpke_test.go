@@ -176,11 +176,11 @@ func (etv *exporterTestVector) UnmarshalJSON(data []byte) error {
 // HPKE test vector structures
 type rawTestVector struct {
 	// Parameters
-	Mode   HPKEMode `json:"mode"`
-	KEMID  KEMID    `json:"kemID"`
-	KDFID  KDFID    `json:"kdfID"`
-	AEADID AEADID   `json:"aeadID"`
-	Info   string   `json:"info"`
+	Mode   Mode   `json:"mode"`
+	KEMID  KEMID  `json:"kemID"`
+	KDFID  KDFID  `json:"kdfID"`
+	AEADID AEADID `json:"aeadID"`
+	Info   string `json:"info"`
 
 	// Private keys
 	SeedR string `json:"seedR"`
@@ -194,7 +194,7 @@ type rawTestVector struct {
 
 	// Public keys
 	PKR string `json:"pkRm"`
-	PKI string `json:"pkSm,omitempty"`
+	PKS string `json:"pkSm,omitempty"`
 	PKE string `json:"pkEm"`
 
 	// Key schedule inputs and computations
@@ -215,7 +215,7 @@ type testVector struct {
 	suite CipherSuite
 
 	// Parameters
-	mode   HPKEMode
+	mode   Mode
 	kemID  KEMID
 	kdfID  KDFID
 	aeadID AEADID
@@ -267,7 +267,7 @@ func (tv testVector) MarshalJSON() ([]byte, error) {
 		PSKID: mustHex(tv.pskID),
 
 		PKR: mustSerializePub(tv.suite, tv.pkR),
-		PKI: mustSerializePub(tv.suite, tv.pkS),
+		PKS: mustSerializePub(tv.suite, tv.pkS),
 		PKE: mustSerializePub(tv.suite, tv.pkE),
 
 		Enc:                mustHex(tv.enc),
@@ -307,7 +307,7 @@ func (tv *testVector) UnmarshalJSON(data []byte) error {
 	tv.skE = mustDeserializePriv(tv.t, tv.suite, raw.SKE, true)
 
 	tv.pkR = mustDeserializePub(tv.t, tv.suite, raw.PKR, true)
-	tv.pkS = mustDeserializePub(tv.t, tv.suite, raw.PKI, modeRequiresSenderKey)
+	tv.pkS = mustDeserializePub(tv.t, tv.suite, raw.PKS, modeRequiresSenderKey)
 	tv.pkE = mustDeserializePub(tv.t, tv.suite, raw.PKE, true)
 
 	tv.psk = mustUnhex(tv.t, raw.PSK)
@@ -354,13 +354,13 @@ func (tva *testVectorArray) UnmarshalJSON(data []byte) error {
 ///////
 // Generalize setup functions so that we can iterate over them easily
 type setupMode struct {
-	Mode HPKEMode
+	Mode Mode
 	OK   func(suite CipherSuite) bool
 	I    func(suite CipherSuite, pkR KEMPublicKey, info []byte, skS KEMPrivateKey, psk, pskID []byte) ([]byte, *EncryptContext, error)
 	R    func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkS KEMPublicKey, psk, pskID []byte) (*DecryptContext, error)
 }
 
-var setupModes = map[HPKEMode]setupMode{
+var setupModes = map[Mode]setupMode{
 	modeBase: {
 		Mode: modeBase,
 		OK:   func(suite CipherSuite) bool { return true },
