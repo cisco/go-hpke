@@ -3,10 +3,15 @@ import json
 import textwrap
 
 ordered_keys = [
-    "mode", "kemID", "kdfID", "aeadID", "info", "skRm",
-    "skSm", "skEm", "psk", "pskID", "pkRm", "pkSm", "pkEm",
-    "enc", "zz", "key_schedule_context", "secret", "key", "nonce",
-    "exporterSecret",
+    # Mode and ciphersuite parameters
+    "mode", "kemID", "kdfID", "aeadID", "info",
+    # Private key material
+    "seedE", "pkE", "skE",
+    "seedR", "pkR", "skR",
+    "seedS", "pkS", "skS",
+    "psk", "pskID",
+    # Derived context
+    "enc", "zz", "keyScheduleContext", "secret", "key", "nonce", "exporterSecret",
 ]
 
 ordered_encryption_keys = [

@@ -31,7 +31,7 @@ const (
 )
 
 ///////
-// Infallible marshal / unmarshal
+// Infallible Serialize / Deserialize
 func fatalOnError(t *testing.T, err error, msg string) {
 	realMsg := fmt.Sprintf("%s: %v", msg, err)
 	if err != nil {
@@ -53,36 +53,38 @@ func mustHex(d []byte) string {
 	return hex.EncodeToString(d)
 }
 
-func mustUnmarshalPriv(t *testing.T, suite CipherSuite, h string, required bool) KEMPrivateKey {
+func mustDeserializePriv(t *testing.T, suite CipherSuite, h string, required bool) KEMPrivateKey {
 	skm := mustUnhex(t, h)
-	sk, err := suite.KEM.UnmarshalPrivate(skm)
+	sk, err := suite.KEM.DeserializePrivate(skm)
 	if required {
-		fatalOnError(t, err, "unmarshalPrivate failed")
+		fatalOnError(t, err, "DeserializePrivate failed")
 	}
 	return sk
 }
 
-func mustMarshalPriv(suite CipherSuite, priv KEMPrivateKey) string {
-	return mustHex(suite.KEM.MarshalPrivate(priv))
+func mustSerializePriv(suite CipherSuite, priv KEMPrivateKey) string {
+	return mustHex(suite.KEM.SerializePrivate(priv))
 }
 
-func mustUnmarshalPub(t *testing.T, suite CipherSuite, h string, required bool) KEMPublicKey {
+func mustDeserializePub(t *testing.T, suite CipherSuite, h string, required bool) KEMPublicKey {
 	pkm := mustUnhex(t, h)
-	pk, err := suite.KEM.Unmarshal(pkm)
+	pk, err := suite.KEM.Deserialize(pkm)
 	if required {
-		fatalOnError(t, err, "Unmarshal failed")
+		fatalOnError(t, err, "Deserialize failed")
 	}
 	return pk
 }
 
-func mustMarshalPub(suite CipherSuite, pub KEMPublicKey) string {
-	return mustHex(suite.KEM.Marshal(pub))
+func mustSerializePub(suite CipherSuite, pub KEMPublicKey) string {
+	return mustHex(suite.KEM.Serialize(pub))
 }
 
-func mustGenerateKeyPair(t *testing.T, suite CipherSuite) (KEMPrivateKey, KEMPublicKey) {
-	sk, pk, err := suite.KEM.GenerateKeyPair(rand.Reader)
+func mustGenerateKeyPair(t *testing.T, suite CipherSuite) (KEMPrivateKey, KEMPublicKey, []byte) {
+	ikm := make([]byte, suite.KEM.PrivateKeySize())
+	rand.Reader.Read(ikm)
+	sk, pk, err := suite.KEM.DeriveKeyPair(ikm)
 	fatalOnError(t, err, "Error generating DH key pair")
-	return sk, pk
+	return sk, pk, ikm
 }
 
 ///////
@@ -174,13 +176,16 @@ func (etv *exporterTestVector) UnmarshalJSON(data []byte) error {
 // HPKE test vector structures
 type rawTestVector struct {
 	// Parameters
-	Mode   HPKEMode `json:"mode"`
-	KEMID  KEMID    `json:"kemID"`
-	KDFID  KDFID    `json:"kdfID"`
-	AEADID AEADID   `json:"aeadID"`
-	Info   string   `json:"info"`
+	Mode   Mode   `json:"mode"`
+	KEMID  KEMID  `json:"kemID"`
+	KDFID  KDFID  `json:"kdfID"`
+	AEADID AEADID `json:"aeadID"`
+	Info   string `json:"info"`
 
 	// Private keys
+	SeedR string `json:"seedR"`
+	SeedS string `json:"seedS,omitempty"`
+	SeedE string `json:"seedE"`
 	SKR   string `json:"skRm"`
 	SKS   string `json:"skSm,omitempty"`
 	SKE   string `json:"skEm"`
@@ -189,13 +194,13 @@ type rawTestVector struct {
 
 	// Public keys
 	PKR string `json:"pkRm"`
-	PKI string `json:"pkSm,omitempty"`
+	PKS string `json:"pkSm,omitempty"`
 	PKE string `json:"pkEm"`
 
 	// Key schedule inputs and computations
 	Enc                string `json:"enc"`
 	Zz                 string `json:"zz"`
-	KeyScheduleContext string `json:"key_schedule_context"`
+	KeyScheduleContext string `json:"keyScheduleContext"`
 	Secret             string `json:"secret"`
 	Key                string `json:"key"`
 	Nonce              string `json:"nonce"`
@@ -210,7 +215,7 @@ type testVector struct {
 	suite CipherSuite
 
 	// Parameters
-	mode   HPKEMode
+	mode   Mode
 	kemID  KEMID
 	kdfID  KDFID
 	aeadID AEADID
@@ -220,6 +225,9 @@ type testVector struct {
 	skR   KEMPrivateKey
 	skS   KEMPrivateKey
 	skE   KEMPrivateKey
+	seedR []byte
+	seedS []byte
+	seedE []byte
 	psk   []byte
 	pskID []byte
 
@@ -249,15 +257,18 @@ func (tv testVector) MarshalJSON() ([]byte, error) {
 		AEADID: tv.aeadID,
 		Info:   mustHex(tv.info),
 
-		SKR:   mustMarshalPriv(tv.suite, tv.skR),
-		SKS:   mustMarshalPriv(tv.suite, tv.skS),
-		SKE:   mustMarshalPriv(tv.suite, tv.skE),
+		SeedR: mustHex(tv.seedR),
+		SeedS: mustHex(tv.seedS),
+		SeedE: mustHex(tv.seedE),
+		SKR:   mustSerializePriv(tv.suite, tv.skR),
+		SKS:   mustSerializePriv(tv.suite, tv.skS),
+		SKE:   mustSerializePriv(tv.suite, tv.skE),
 		PSK:   mustHex(tv.psk),
 		PSKID: mustHex(tv.pskID),
 
-		PKR: mustMarshalPub(tv.suite, tv.pkR),
-		PKI: mustMarshalPub(tv.suite, tv.pkS),
-		PKE: mustMarshalPub(tv.suite, tv.pkE),
+		PKR: mustSerializePub(tv.suite, tv.pkR),
+		PKS: mustSerializePub(tv.suite, tv.pkS),
+		PKE: mustSerializePub(tv.suite, tv.pkE),
 
 		Enc:                mustHex(tv.enc),
 		Zz:                 mustHex(tv.zz),
@@ -291,17 +302,20 @@ func (tv *testVector) UnmarshalJSON(data []byte) error {
 	}
 
 	modeRequiresSenderKey := (tv.mode == modeAuth || tv.mode == modeAuthPSK)
-	tv.skR = mustUnmarshalPriv(tv.t, tv.suite, raw.SKR, true)
-	tv.skS = mustUnmarshalPriv(tv.t, tv.suite, raw.SKS, modeRequiresSenderKey)
-	tv.skE = mustUnmarshalPriv(tv.t, tv.suite, raw.SKE, true)
+	tv.skR = mustDeserializePriv(tv.t, tv.suite, raw.SKR, true)
+	tv.skS = mustDeserializePriv(tv.t, tv.suite, raw.SKS, modeRequiresSenderKey)
+	tv.skE = mustDeserializePriv(tv.t, tv.suite, raw.SKE, true)
+
+	tv.pkR = mustDeserializePub(tv.t, tv.suite, raw.PKR, true)
+	tv.pkS = mustDeserializePub(tv.t, tv.suite, raw.PKS, modeRequiresSenderKey)
+	tv.pkE = mustDeserializePub(tv.t, tv.suite, raw.PKE, true)
+
 	tv.psk = mustUnhex(tv.t, raw.PSK)
 	tv.pskID = mustUnhex(tv.t, raw.PSKID)
 
-	tv.suite.KEM.setEphemeralKeyPair(tv.skE)
-
-	tv.pkR = mustUnmarshalPub(tv.t, tv.suite, raw.PKR, true)
-	tv.pkS = mustUnmarshalPub(tv.t, tv.suite, raw.PKI, modeRequiresSenderKey)
-	tv.pkE = mustUnmarshalPub(tv.t, tv.suite, raw.PKE, true)
+	tv.seedR = mustUnhex(tv.t, raw.SeedR)
+	tv.seedS = mustUnhex(tv.t, raw.SeedS)
+	tv.seedE = mustUnhex(tv.t, raw.SeedE)
 
 	tv.enc = mustUnhex(tv.t, raw.Enc)
 	tv.zz = mustUnhex(tv.t, raw.Zz)
@@ -340,13 +354,13 @@ func (tva *testVectorArray) UnmarshalJSON(data []byte) error {
 ///////
 // Generalize setup functions so that we can iterate over them easily
 type setupMode struct {
-	Mode HPKEMode
+	Mode Mode
 	OK   func(suite CipherSuite) bool
 	I    func(suite CipherSuite, pkR KEMPublicKey, info []byte, skS KEMPrivateKey, psk, pskID []byte) ([]byte, *EncryptContext, error)
 	R    func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkS KEMPublicKey, psk, pskID []byte) (*DecryptContext, error)
 }
 
-var setupModes = map[HPKEMode]setupMode{
+var setupModes = map[Mode]setupMode{
 	modeBase: {
 		Mode: modeBase,
 		OK:   func(suite CipherSuite) bool { return true },
@@ -415,8 +429,8 @@ func (rtt roundTripTest) Test(t *testing.T) {
 		return
 	}
 
-	skS, pkS := mustGenerateKeyPair(t, suite)
-	skR, pkR := mustGenerateKeyPair(t, suite)
+	skS, pkS, _ := mustGenerateKeyPair(t, suite)
+	skR, pkR, _ := mustGenerateKeyPair(t, suite)
 
 	enc, ctxI, err := rtt.setup.I(suite, pkR, info, skS, fixedPSK, fixedPSKID)
 	assertNotError(t, suite, "Error in SetupI", err)
@@ -476,14 +490,47 @@ func verifyParameters(tv testVector, ctx cipherContext) {
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'exporterSecret'", tv.exporterSecret, ctx.exporterSecret)
 }
 
+func verifyPublicKeysEqual(tv testVector, pkX, pkY KEMPublicKey) {
+	pkXm := mustSerializePub(tv.suite, pkX)
+	pkYm := mustSerializePub(tv.suite, pkY)
+	assertBytesEqual(tv.t, tv.suite, "Incorrect public key", []byte(pkXm), []byte(pkYm))
+}
+
+func verifyPrivateKeysEqual(tv testVector, skX, skY KEMPrivateKey) {
+	skXm := mustSerializePriv(tv.suite, skX)
+	skYm := mustSerializePriv(tv.suite, skY)
+	assertBytesEqual(tv.t, tv.suite, "Incorrect private key", []byte(skXm), []byte(skYm))
+}
+
 func verifyTestVector(tv testVector) {
 	setup := setupModes[tv.mode]
 
-	enc, ctxI, err := setup.I(tv.suite, tv.pkR, tv.info, tv.skS, tv.psk, tv.pskID)
+	skR, pkR, err := tv.suite.KEM.DeriveKeyPair(tv.seedR)
+	assertNotError(tv.t, tv.suite, "Error in DeriveKeyPair", err)
+	verifyPublicKeysEqual(tv, tv.pkR, pkR)
+	verifyPrivateKeysEqual(tv, tv.skR, skR)
+
+	skE, pkE, err := tv.suite.KEM.DeriveKeyPair(tv.seedE)
+	assertNotError(tv.t, tv.suite, "Error in DeriveKeyPair", err)
+	verifyPublicKeysEqual(tv, tv.pkE, pkE)
+	verifyPrivateKeysEqual(tv, tv.skE, skE)
+
+	tv.suite.KEM.setEphemeralKeyPair(skE)
+
+	var pkS KEMPublicKey
+	var skS KEMPrivateKey
+	if setup.Mode == modeAuth || setup.Mode == modeAuthPSK {
+		skS, pkS, err = tv.suite.KEM.DeriveKeyPair(tv.seedS)
+		assertNotError(tv.t, tv.suite, "Error in DeriveKeyPair", err)
+		verifyPublicKeysEqual(tv, tv.pkS, pkS)
+		verifyPrivateKeysEqual(tv, tv.skS, skS)
+	}
+
+	enc, ctxI, err := setup.I(tv.suite, pkR, tv.info, skS, tv.psk, tv.pskID)
 	assertNotError(tv.t, tv.suite, "Error in SetupI", err)
 	assertBytesEqual(tv.t, tv.suite, "Encapsulated key mismatch", enc, tv.enc)
 
-	ctxR, err := setup.R(tv.suite, tv.skR, tv.enc, tv.info, tv.pkS, tv.psk, tv.pskID)
+	ctxR, err := setup.R(tv.suite, skR, tv.enc, tv.info, pkS, tv.psk, tv.pskID)
 	assertNotError(tv.t, tv.suite, "Error in SetupR", err)
 
 	verifyParameters(tv, ctxI.cipherContext)
@@ -559,14 +606,15 @@ func generateTestVector(t *testing.T, setup setupMode, kemID KEMID, kdfID KDFID,
 		t.Fatalf("[%x, %x, %x] Error looking up ciphersuite: %s", kemID, kdfID, aeadID, err)
 	}
 
-	skR, pkR := mustGenerateKeyPair(t, suite)
-	skE, pkE := mustGenerateKeyPair(t, suite)
+	skR, pkR, seedR := mustGenerateKeyPair(t, suite)
+	skE, pkE, seedE := mustGenerateKeyPair(t, suite)
 
 	// The sender key share is only required for Auth mode variants.
 	var pkS KEMPublicKey
 	var skS KEMPrivateKey
+	var seedS []byte
 	if setup.Mode == modeAuth || setup.Mode == modeAuthPSK {
-		skS, pkS = mustGenerateKeyPair(t, suite)
+		skS, pkS, seedS = mustGenerateKeyPair(t, suite)
 	}
 
 	// A PSK is only required for PSK mode variants.
@@ -602,11 +650,14 @@ func generateTestVector(t *testing.T, setup setupMode, kemID KEMID, kdfID KDFID,
 		skR:                skR,
 		pkR:                pkR,
 		skS:                skS,
-		psk:                psk,
-		pskID:              pskID,
 		pkS:                pkS,
 		skE:                skE,
 		pkE:                pkE,
+		seedR:              seedR,
+		seedS:              seedS,
+		seedE:              seedE,
+		psk:                psk,
+		pskID:              pskID,
 		enc:                ctxI.setupParams.enc,
 		zz:                 ctxI.setupParams.zz,
 		keyScheduleContext: ctxI.contextParams.keyScheduleContext,
