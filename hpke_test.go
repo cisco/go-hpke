@@ -177,9 +177,9 @@ func (etv *exporterTestVector) UnmarshalJSON(data []byte) error {
 type rawTestVector struct {
 	// Parameters
 	Mode   Mode   `json:"mode"`
-	KEMID  KEMID  `json:"kemID"`
-	KDFID  KDFID  `json:"kdfID"`
-	AEADID AEADID `json:"aeadID"`
+	KEMID  KEMID  `json:"kem_id"`
+	KDFID  KDFID  `json:"kdf_id"`
+	AEADID AEADID `json:"aead_id"`
 	Info   string `json:"info"`
 
 	// Private keys
@@ -190,7 +190,7 @@ type rawTestVector struct {
 	SKS   string `json:"skSm,omitempty"`
 	SKE   string `json:"skEm"`
 	PSK   string `json:"psk,omitempty"`
-	PSKID string `json:"pskID,omitempty"`
+	PSKID string `json:"psk_id,omitempty"`
 
 	// Public keys
 	PKR string `json:"pkRm"`
@@ -200,11 +200,11 @@ type rawTestVector struct {
 	// Key schedule inputs and computations
 	Enc                string `json:"enc"`
 	Zz                 string `json:"zz"`
-	KeyScheduleContext string `json:"keyScheduleContext"`
+	KeyScheduleContext string `json:"key_schedule_context"`
 	Secret             string `json:"secret"`
 	Key                string `json:"key"`
 	Nonce              string `json:"nonce"`
-	ExporterSecret     string `json:"exporterSecret"`
+	ExporterSecret     string `json:"exporter_secret"`
 
 	Encryptions []encryptionTestVector `json:"encryptions"`
 	Exports     []exporterTestVector   `json:"exports"`
@@ -215,21 +215,21 @@ type testVector struct {
 	suite CipherSuite
 
 	// Parameters
-	mode   Mode
-	kemID  KEMID
-	kdfID  KDFID
-	aeadID AEADID
-	info   []byte
+	mode    Mode
+	kem_id  KEMID
+	kdf_id  KDFID
+	aead_id AEADID
+	info    []byte
 
 	// Private keys
-	skR   KEMPrivateKey
-	skS   KEMPrivateKey
-	skE   KEMPrivateKey
-	seedR []byte
-	seedS []byte
-	seedE []byte
-	psk   []byte
-	pskID []byte
+	skR    KEMPrivateKey
+	skS    KEMPrivateKey
+	skE    KEMPrivateKey
+	seedR  []byte
+	seedS  []byte
+	seedE  []byte
+	psk    []byte
+	psk_id []byte
 
 	// Public keys
 	pkR KEMPublicKey
@@ -252,9 +252,9 @@ type testVector struct {
 func (tv testVector) MarshalJSON() ([]byte, error) {
 	return json.Marshal(rawTestVector{
 		Mode:   tv.mode,
-		KEMID:  tv.kemID,
-		KDFID:  tv.kdfID,
-		AEADID: tv.aeadID,
+		KEMID:  tv.kem_id,
+		KDFID:  tv.kdf_id,
+		AEADID: tv.aead_id,
 		Info:   mustHex(tv.info),
 
 		SeedR: mustHex(tv.seedR),
@@ -264,7 +264,7 @@ func (tv testVector) MarshalJSON() ([]byte, error) {
 		SKS:   mustSerializePriv(tv.suite, tv.skS),
 		SKE:   mustSerializePriv(tv.suite, tv.skE),
 		PSK:   mustHex(tv.psk),
-		PSKID: mustHex(tv.pskID),
+		PSKID: mustHex(tv.psk_id),
 
 		PKR: mustSerializePub(tv.suite, tv.pkR),
 		PKS: mustSerializePub(tv.suite, tv.pkS),
@@ -291,9 +291,9 @@ func (tv *testVector) UnmarshalJSON(data []byte) error {
 	}
 
 	tv.mode = raw.Mode
-	tv.kemID = raw.KEMID
-	tv.kdfID = raw.KDFID
-	tv.aeadID = raw.AEADID
+	tv.kem_id = raw.KEMID
+	tv.kdf_id = raw.KDFID
+	tv.aead_id = raw.AEADID
 	tv.info = mustUnhex(tv.t, raw.Info)
 
 	tv.suite, err = AssembleCipherSuite(raw.KEMID, raw.KDFID, raw.AEADID)
@@ -311,7 +311,7 @@ func (tv *testVector) UnmarshalJSON(data []byte) error {
 	tv.pkE = mustDeserializePub(tv.t, tv.suite, raw.PKE, true)
 
 	tv.psk = mustUnhex(tv.t, raw.PSK)
-	tv.pskID = mustUnhex(tv.t, raw.PSKID)
+	tv.psk_id = mustUnhex(tv.t, raw.PSKID)
 
 	tv.seedR = mustUnhex(tv.t, raw.SeedR)
 	tv.seedS = mustUnhex(tv.t, raw.SeedS)
@@ -356,29 +356,29 @@ func (tva *testVectorArray) UnmarshalJSON(data []byte) error {
 type setupMode struct {
 	Mode Mode
 	OK   func(suite CipherSuite) bool
-	I    func(suite CipherSuite, pkR KEMPublicKey, info []byte, skS KEMPrivateKey, psk, pskID []byte) ([]byte, *EncryptContext, error)
-	R    func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkS KEMPublicKey, psk, pskID []byte) (*DecryptContext, error)
+	I    func(suite CipherSuite, pkR KEMPublicKey, info []byte, skS KEMPrivateKey, psk, psk_id []byte) ([]byte, *EncryptContext, error)
+	R    func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkS KEMPublicKey, psk, psk_id []byte) (*DecryptContext, error)
 }
 
 var setupModes = map[Mode]setupMode{
 	modeBase: {
 		Mode: modeBase,
 		OK:   func(suite CipherSuite) bool { return true },
-		I: func(suite CipherSuite, pkR KEMPublicKey, info []byte, skS KEMPrivateKey, psk, pskID []byte) ([]byte, *EncryptContext, error) {
+		I: func(suite CipherSuite, pkR KEMPublicKey, info []byte, skS KEMPrivateKey, psk, psk_id []byte) ([]byte, *EncryptContext, error) {
 			return SetupBaseS(suite, rand.Reader, pkR, info)
 		},
-		R: func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkS KEMPublicKey, psk, pskID []byte) (*DecryptContext, error) {
+		R: func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkS KEMPublicKey, psk, psk_id []byte) (*DecryptContext, error) {
 			return SetupBaseR(suite, skR, enc, info)
 		},
 	},
 	modePSK: {
 		Mode: modePSK,
 		OK:   func(suite CipherSuite) bool { return true },
-		I: func(suite CipherSuite, pkR KEMPublicKey, info []byte, skS KEMPrivateKey, psk, pskID []byte) ([]byte, *EncryptContext, error) {
-			return SetupPSKS(suite, rand.Reader, pkR, psk, pskID, info)
+		I: func(suite CipherSuite, pkR KEMPublicKey, info []byte, skS KEMPrivateKey, psk, psk_id []byte) ([]byte, *EncryptContext, error) {
+			return SetupPSKS(suite, rand.Reader, pkR, psk, psk_id, info)
 		},
-		R: func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkS KEMPublicKey, psk, pskID []byte) (*DecryptContext, error) {
-			return SetupPSKR(suite, skR, enc, psk, pskID, info)
+		R: func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkS KEMPublicKey, psk, psk_id []byte) (*DecryptContext, error) {
+			return SetupPSKR(suite, skR, enc, psk, psk_id, info)
 		},
 	},
 	modeAuth: {
@@ -387,10 +387,10 @@ var setupModes = map[Mode]setupMode{
 			_, ok := suite.KEM.(AuthKEMScheme)
 			return ok
 		},
-		I: func(suite CipherSuite, pkR KEMPublicKey, info []byte, skS KEMPrivateKey, psk, pskID []byte) ([]byte, *EncryptContext, error) {
+		I: func(suite CipherSuite, pkR KEMPublicKey, info []byte, skS KEMPrivateKey, psk, psk_id []byte) ([]byte, *EncryptContext, error) {
 			return SetupAuthS(suite, rand.Reader, pkR, skS, info)
 		},
-		R: func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkS KEMPublicKey, psk, pskID []byte) (*DecryptContext, error) {
+		R: func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkS KEMPublicKey, psk, psk_id []byte) (*DecryptContext, error) {
 			return SetupAuthR(suite, skR, pkS, enc, info)
 		},
 	},
@@ -400,11 +400,11 @@ var setupModes = map[Mode]setupMode{
 			_, ok := suite.KEM.(AuthKEMScheme)
 			return ok
 		},
-		I: func(suite CipherSuite, pkR KEMPublicKey, info []byte, skS KEMPrivateKey, psk, pskID []byte) ([]byte, *EncryptContext, error) {
-			return SetupAuthPSKS(suite, rand.Reader, pkR, skS, psk, pskID, info)
+		I: func(suite CipherSuite, pkR KEMPublicKey, info []byte, skS KEMPrivateKey, psk, psk_id []byte) ([]byte, *EncryptContext, error) {
+			return SetupAuthPSKS(suite, rand.Reader, pkR, skS, psk, psk_id, info)
 		},
-		R: func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkS KEMPublicKey, psk, pskID []byte) (*DecryptContext, error) {
-			return SetupAuthPSKR(suite, skR, pkS, enc, psk, pskID, info)
+		R: func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkS KEMPublicKey, psk, psk_id []byte) (*DecryptContext, error) {
+			return SetupAuthPSKR(suite, skR, pkS, enc, psk, psk_id, info)
 		},
 	},
 }
@@ -413,16 +413,16 @@ var setupModes = map[Mode]setupMode{
 // Direct tests
 
 type roundTripTest struct {
-	kemID  KEMID
-	kdfID  KDFID
-	aeadID AEADID
-	setup  setupMode
+	kem_id  KEMID
+	kdf_id  KDFID
+	aead_id AEADID
+	setup   setupMode
 }
 
 func (rtt roundTripTest) Test(t *testing.T) {
-	suite, err := AssembleCipherSuite(rtt.kemID, rtt.kdfID, rtt.aeadID)
+	suite, err := AssembleCipherSuite(rtt.kem_id, rtt.kdf_id, rtt.aead_id)
 	if err != nil {
-		t.Fatalf("[%04x, %04x, %04x] Error looking up ciphersuite: %v", rtt.kemID, rtt.kdfID, rtt.aeadID, err)
+		t.Fatalf("[%04x, %04x, %04x] Error looking up ciphersuite: %v", rtt.kem_id, rtt.kdf_id, rtt.aead_id, err)
 	}
 
 	if !rtt.setup.OK(suite) {
@@ -453,12 +453,12 @@ func (rtt roundTripTest) Test(t *testing.T) {
 }
 
 func TestModes(t *testing.T) {
-	for kemID, _ := range kems {
-		for kdfID, _ := range kdfs {
-			for aeadID, _ := range aeads {
+	for kem_id, _ := range kems {
+		for kdf_id, _ := range kdfs {
+			for aead_id, _ := range aeads {
 				for mode, setup := range setupModes {
-					label := fmt.Sprintf("kem=%04x/kdf=%04x/aead=%04x/mode=%02x", kemID, kdfID, aeadID, mode)
-					rtt := roundTripTest{kemID, kdfID, aeadID, setup}
+					label := fmt.Sprintf("kem=%04x/kdf=%04x/aead=%04x/mode=%02x", kem_id, kdf_id, aead_id, mode)
+					rtt := roundTripTest{kem_id, kdf_id, aead_id, setup}
 					t.Run(label, rtt.Test)
 				}
 			}
@@ -487,7 +487,7 @@ func verifyParameters(tv testVector, ctx cipherContext) {
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'secret'", tv.secret, ctx.contextParams.secret)
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'key'", tv.key, ctx.key)
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'nonce'", tv.nonce, ctx.nonce)
-	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'exporterSecret'", tv.exporterSecret, ctx.exporterSecret)
+	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'exporter_secret'", tv.exporterSecret, ctx.exporterSecret)
 }
 
 func verifyPublicKeysEqual(tv testVector, pkX, pkY KEMPublicKey) {
@@ -526,11 +526,11 @@ func verifyTestVector(tv testVector) {
 		verifyPrivateKeysEqual(tv, tv.skS, skS)
 	}
 
-	enc, ctxI, err := setup.I(tv.suite, pkR, tv.info, skS, tv.psk, tv.pskID)
+	enc, ctxI, err := setup.I(tv.suite, pkR, tv.info, skS, tv.psk, tv.psk_id)
 	assertNotError(tv.t, tv.suite, "Error in SetupI", err)
 	assertBytesEqual(tv.t, tv.suite, "Encapsulated key mismatch", enc, tv.enc)
 
-	ctxR, err := setup.R(tv.suite, skR, tv.enc, tv.info, pkS, tv.psk, tv.pskID)
+	ctxR, err := setup.R(tv.suite, skR, tv.enc, tv.info, pkS, tv.psk, tv.psk_id)
 	assertNotError(tv.t, tv.suite, "Error in SetupR", err)
 
 	verifyParameters(tv, ctxI.cipherContext)
@@ -557,7 +557,7 @@ func verifyTestVectors(t *testing.T, vectorString []byte, subtest bool) {
 		if !subtest {
 			test(t)
 		} else {
-			label := fmt.Sprintf("kem=%04x/kdf=%04x/aead=%04x/mode=%02x", tv.kemID, tv.kdfID, tv.aeadID, tv.mode)
+			label := fmt.Sprintf("kem=%04x/kdf=%04x/aead=%04x/mode=%02x", tv.kem_id, tv.kdf_id, tv.aead_id, tv.mode)
 			t.Run(label, test)
 		}
 	}
@@ -600,10 +600,10 @@ func generateExports(t *testing.T, suite CipherSuite, ctxI *EncryptContext, ctxR
 	return vectors, nil
 }
 
-func generateTestVector(t *testing.T, setup setupMode, kemID KEMID, kdfID KDFID, aeadID AEADID) testVector {
-	suite, err := AssembleCipherSuite(kemID, kdfID, aeadID)
+func generateTestVector(t *testing.T, setup setupMode, kem_id KEMID, kdf_id KDFID, aead_id AEADID) testVector {
+	suite, err := AssembleCipherSuite(kem_id, kdf_id, aead_id)
 	if err != nil {
-		t.Fatalf("[%x, %x, %x] Error looking up ciphersuite: %s", kemID, kdfID, aeadID, err)
+		t.Fatalf("[%x, %x, %x] Error looking up ciphersuite: %s", kem_id, kdf_id, aead_id, err)
 	}
 
 	skR, pkR, seedR := mustGenerateKeyPair(t, suite)
@@ -619,18 +619,18 @@ func generateTestVector(t *testing.T, setup setupMode, kemID KEMID, kdfID KDFID,
 
 	// A PSK is only required for PSK mode variants.
 	var psk []byte
-	var pskID []byte
+	var psk_id []byte
 	if setup.Mode == modePSK || setup.Mode == modeAuthPSK {
 		psk = fixedPSK
-		pskID = fixedPSKID
+		psk_id = fixedPSKID
 	}
 
 	suite.KEM.setEphemeralKeyPair(skE)
 
-	enc, ctxI, err := setup.I(suite, pkR, info, skS, psk, pskID)
+	enc, ctxI, err := setup.I(suite, pkR, info, skS, psk, psk_id)
 	assertNotError(t, suite, "Error in SetupPSKS", err)
 
-	ctxR, err := setup.R(suite, skR, enc, info, pkS, psk, pskID)
+	ctxR, err := setup.R(suite, skR, enc, info, pkS, psk, psk_id)
 	assertNotError(t, suite, "Error in SetupPSKR", err)
 
 	encryptionVectors, err := generateEncryptions(t, suite, ctxI, ctxR)
@@ -643,9 +643,9 @@ func generateTestVector(t *testing.T, setup setupMode, kemID KEMID, kdfID KDFID,
 		t:                  t,
 		suite:              suite,
 		mode:               setup.Mode,
-		kemID:              kemID,
-		kdfID:              kdfID,
-		aeadID:             aeadID,
+		kem_id:             kem_id,
+		kdf_id:             kdf_id,
+		aead_id:            aead_id,
 		info:               info,
 		skR:                skR,
 		pkR:                pkR,
@@ -657,7 +657,7 @@ func generateTestVector(t *testing.T, setup setupMode, kemID KEMID, kdfID KDFID,
 		seedS:              seedS,
 		seedE:              seedE,
 		psk:                psk,
-		pskID:              pskID,
+		psk_id:             psk_id,
 		enc:                ctxI.setupParams.enc,
 		zz:                 ctxI.setupParams.zz,
 		keyScheduleContext: ctxI.contextParams.keyScheduleContext,
@@ -679,11 +679,11 @@ func TestVectorGenerate(t *testing.T) {
 	supportedAEADs := []AEADID{AEAD_AESGCM128, AEAD_AESGCM256, AEAD_CHACHA20POLY1305}
 
 	vectors := make([]testVector, 0)
-	for _, kemID := range supportedKEMs {
-		for _, kdfID := range supportedKDFs {
-			for _, aeadID := range supportedAEADs {
+	for _, kem_id := range supportedKEMs {
+		for _, kdf_id := range supportedKDFs {
+			for _, aead_id := range supportedAEADs {
 				for _, setup := range setupModes {
-					vectors = append(vectors, generateTestVector(t, setup, kemID, kdfID, aeadID))
+					vectors = append(vectors, generateTestVector(t, setup, kem_id, kdf_id, aead_id))
 				}
 			}
 		}

@@ -13,7 +13,7 @@ import (
 
 const (
 	debug    = true
-	rfcLabel = "RFCXXXX"
+	rfcLabel = "HPKE-05"
 )
 
 type KEMPrivateKey interface {

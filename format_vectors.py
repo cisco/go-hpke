@@ -4,14 +4,14 @@ import textwrap
 
 ordered_keys = [
     # Mode and ciphersuite parameters
-    "mode", "kemID", "kdfID", "aeadID", "info",
+    "mode", "kem_id", "kdf_id", "aead_id", "info",
     # Private key material
     "seedE", "pkE", "skE",
     "seedR", "pkR", "skR",
     "seedS", "pkS", "skS",
-    "psk", "pskID",
+    "psk", "psk_id",
     # Derived context
-    "enc", "zz", "keyScheduleContext", "secret", "key", "nonce", "exporterSecret",
+    "enc", "zz", "key_schedule_context", "secret", "key", "nonce", "exporter_secret",
 ]
 
 ordered_encryption_keys = [
@@ -54,17 +54,17 @@ modeMap = {modeBase: "Base", modePSK: "PSK", modeAuth: "Auth", modeAuthPSK: "Aut
 
 kemIDP256 = 0x0010
 kemIDP521 = 0x0012
-kemIDCurve25519 = 0x0020
-kemMap = {kemIDCurve25519: "DHKEM(Curve25519, HKDF-SHA256)", kemIDP256: "DHKEM(P-256, HKDF-SHA256)", kemIDP521: "DHKEM(P-521, HKDF-SHA512)"}
+kemIDX25519 = 0x0020
+kemMap = {kemIDX25519: "DHKEM(X25519, HKDF-SHA256)", kemIDP256: "DHKEM(P-256, HKDF-SHA256)", kemIDP521: "DHKEM(P-521, HKDF-SHA512)"}
 
 kdfIDSHA256 = 0x0001
 kdfIDSHA512 = 0x0003
 kdfMap = {kdfIDSHA256: "HKDF-SHA256", kdfIDSHA512: "HKDF-SHA512"}
 
-aeadIDAESGCM128 = 0x0001
-aeadIDAESGCM256 = 0x0002
+aeadIDAES128GCM = 0x0001
+aeadIDAES256GCM = 0x0002
 aeadIDChaCha20Poly1305 = 0x0003
-aeadMap = {aeadIDAESGCM128: "AES-GCM-128", aeadIDAESGCM256: "AES-GCM-256", aeadIDChaCha20Poly1305: "ChaCha20Poly1305"}
+aeadMap = {aeadIDAES128GCM: "AES-128-GCM", aeadIDAES256GCM: "AES-256-GCM", aeadIDChaCha20Poly1305: "ChaCha20Poly1305"}
 
 class CipherSuite(object):
     def __init__(self, kemID, kdfID, aeadID):
@@ -82,11 +82,11 @@ class CipherSuite(object):
         return self.kemID == entry_kem_value(vector) and self.kdfID == entry_kdf_value(vector) and self.aeadID == entry_aead_value(vector)
 
 testSuites = [
-    CipherSuite(kemIDCurve25519, kdfIDSHA256, aeadIDAESGCM128),
-    CipherSuite(kemIDCurve25519, kdfIDSHA256, aeadIDChaCha20Poly1305),
-    CipherSuite(kemIDP256, kdfIDSHA256, aeadIDAESGCM128),
+    CipherSuite(kemIDX25519, kdfIDSHA256, aeadIDAES128GCM),
+    CipherSuite(kemIDX25519, kdfIDSHA256, aeadIDChaCha20Poly1305),
+    CipherSuite(kemIDP256, kdfIDSHA256, aeadIDAES128GCM),
     CipherSuite(kemIDP256, kdfIDSHA256, aeadIDChaCha20Poly1305),
-    CipherSuite(kemIDP521, kdfIDSHA512, aeadIDAESGCM256),
+    CipherSuite(kemIDP521, kdfIDSHA512, aeadIDAES256GCM),
 ]
 
 def wrap_line(value):
