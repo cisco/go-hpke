@@ -163,7 +163,7 @@ func keySchedule(suite CipherSuite, mode Mode, sharedSecret, info, psk, pskID []
 	}
 
 	suiteID := suite.ID()
-	pskIDHash := suite.KDF.LabeledExtract(nil, suiteID, "pskID_hash", pskID)
+	pskIDHash := suite.KDF.LabeledExtract(nil, suiteID, "psk_id_hash", pskID)
 	infoHash := suite.KDF.LabeledExtract(nil, suiteID, "info_hash", info)
 
 	contextStruct := hpkeContext{mode, pskIDHash, infoHash}
