@@ -11,7 +11,7 @@ ordered_keys = [
     "seedS", "pkS", "skS",
     "psk", "psk_id",
     # Derived context
-    "enc", "zz", "key_schedule_context", "secret", "key", "nonce", "exporter_secret",
+    "enc", "shared_secret", "key_schedule_context", "secret", "key", "nonce", "exporter_secret",
 ]
 
 ordered_encryption_keys = [
@@ -23,22 +23,22 @@ encryption_count_keys = [
 ]
 
 def entry_kem(entry):
-    return kemMap[entry["kemID"]]
+    return kemMap[entry["kem_id"]]
 
 def entry_kem_value(entry):
-    return entry["kemID"]
+    return entry["kem_id"]
 
 def entry_kdf(entry):
-    return kdfMap[entry["kdfID"]]
+    return kdfMap[entry["kdf_id"]]
 
 def entry_kdf_value(entry):
-    return entry["kdfID"]
+    return entry["kdf_id"]
 
 def entry_aead(entry):
-    return aeadMap[entry["aeadID"]]
+    return aeadMap[entry["aead_id"]]
 
 def entry_aead_value(entry):
-    return entry["aeadID"]
+    return entry["aead_id"]
 
 def entry_mode(entry):
     return modeMap[entry["mode"]]
@@ -52,41 +52,41 @@ modeAuth = 0x02
 modeAuthPSK = 0x03
 modeMap = {modeBase: "Base", modePSK: "PSK", modeAuth: "Auth", modeAuthPSK: "AuthPSK"}
 
-kemIDP256 = 0x0010
-kemIDP521 = 0x0012
-kemIDX25519 = 0x0020
-kemMap = {kemIDX25519: "DHKEM(X25519, HKDF-SHA256)", kemIDP256: "DHKEM(P-256, HKDF-SHA256)", kemIDP521: "DHKEM(P-521, HKDF-SHA512)"}
+kem_idP256 = 0x0010
+kem_idP521 = 0x0012
+kem_idX25519 = 0x0020
+kemMap = {kem_idX25519: "DHKEM(X25519, HKDF-SHA256)", kem_idP256: "DHKEM(P-256, HKDF-SHA256)", kem_idP521: "DHKEM(P-521, HKDF-SHA512)"}
 
-kdfIDSHA256 = 0x0001
-kdfIDSHA512 = 0x0003
-kdfMap = {kdfIDSHA256: "HKDF-SHA256", kdfIDSHA512: "HKDF-SHA512"}
+kdf_idSHA256 = 0x0001
+kdf_idSHA512 = 0x0003
+kdfMap = {kdf_idSHA256: "HKDF-SHA256", kdf_idSHA512: "HKDF-SHA512"}
 
-aeadIDAES128GCM = 0x0001
-aeadIDAES256GCM = 0x0002
-aeadIDChaCha20Poly1305 = 0x0003
-aeadMap = {aeadIDAES128GCM: "AES-128-GCM", aeadIDAES256GCM: "AES-256-GCM", aeadIDChaCha20Poly1305: "ChaCha20Poly1305"}
+aead_idAES128GCM = 0x0001
+aead_idAES256GCM = 0x0002
+aead_idChaCha20Poly1305 = 0x0003
+aeadMap = {aead_idAES128GCM: "AES-128-GCM", aead_idAES256GCM: "AES-256-GCM", aead_idChaCha20Poly1305: "ChaCha20Poly1305"}
 
 class CipherSuite(object):
-    def __init__(self, kemID, kdfID, aeadID):
-        self.kemID = kemID
-        self.kdfID = kdfID
-        self.aeadID = aeadID
+    def __init__(self, kem_id, kdf_id, aead_id):
+        self.kem_id = kem_id
+        self.kdf_id = kdf_id
+        self.aead_id = aead_id
 
     def __str__(self):
-        return kemMap[self.kemID] + ", " + kdfMap[self.kdfID] + ", " + aeadMap[self.aeadID]
+        return kemMap[self.kem_id] + ", " + kdfMap[self.kdf_id] + ", " + aeadMap[self.aead_id]
 
     def __repr__(self):
         return str(self)
 
     def matches_vector(self, vector):
-        return self.kemID == entry_kem_value(vector) and self.kdfID == entry_kdf_value(vector) and self.aeadID == entry_aead_value(vector)
+        return self.kem_id == entry_kem_value(vector) and self.kdf_id == entry_kdf_value(vector) and self.aead_id == entry_aead_value(vector)
 
 testSuites = [
-    CipherSuite(kemIDX25519, kdfIDSHA256, aeadIDAES128GCM),
-    CipherSuite(kemIDX25519, kdfIDSHA256, aeadIDChaCha20Poly1305),
-    CipherSuite(kemIDP256, kdfIDSHA256, aeadIDAES128GCM),
-    CipherSuite(kemIDP256, kdfIDSHA256, aeadIDChaCha20Poly1305),
-    CipherSuite(kemIDP521, kdfIDSHA512, aeadIDAES256GCM),
+    CipherSuite(kem_idX25519, kdf_idSHA256, aead_idAES128GCM),
+    CipherSuite(kem_idX25519, kdf_idSHA256, aead_idChaCha20Poly1305),
+    CipherSuite(kem_idP256, kdf_idSHA256, aead_idAES128GCM),
+    CipherSuite(kem_idP256, kdf_idSHA256, aead_idChaCha20Poly1305),
+    CipherSuite(kem_idP521, kdf_idSHA512, aead_idAES256GCM),
 ]
 
 def wrap_line(value):

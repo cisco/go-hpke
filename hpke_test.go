@@ -199,7 +199,7 @@ type rawTestVector struct {
 
 	// Key schedule inputs and computations
 	Enc                string `json:"enc"`
-	Zz                 string `json:"zz"`
+	SharedSecret       string `json:"shared_secret"`
 	KeyScheduleContext string `json:"key_schedule_context"`
 	Secret             string `json:"secret"`
 	Key                string `json:"key"`
@@ -238,7 +238,7 @@ type testVector struct {
 
 	// Key schedule inputs and computations
 	enc                []byte
-	zz                 []byte
+	sharedSecret       []byte
 	keyScheduleContext []byte
 	secret             []byte
 	key                []byte
@@ -271,7 +271,7 @@ func (tv testVector) MarshalJSON() ([]byte, error) {
 		PKE: mustSerializePub(tv.suite, tv.pkE),
 
 		Enc:                mustHex(tv.enc),
-		Zz:                 mustHex(tv.zz),
+		SharedSecret:       mustHex(tv.sharedSecret),
 		KeyScheduleContext: mustHex(tv.keyScheduleContext),
 		Secret:             mustHex(tv.secret),
 		Key:                mustHex(tv.key),
@@ -318,7 +318,7 @@ func (tv *testVector) UnmarshalJSON(data []byte) error {
 	tv.seedE = mustUnhex(tv.t, raw.SeedE)
 
 	tv.enc = mustUnhex(tv.t, raw.Enc)
-	tv.zz = mustUnhex(tv.t, raw.Zz)
+	tv.sharedSecret = mustUnhex(tv.t, raw.SharedSecret)
 	tv.keyScheduleContext = mustUnhex(tv.t, raw.KeyScheduleContext)
 	tv.secret = mustUnhex(tv.t, raw.Secret)
 	tv.key = mustUnhex(tv.t, raw.Key)
@@ -481,7 +481,7 @@ func verifyEncryptions(tv testVector, enc *EncryptContext, dec *DecryptContext) 
 }
 
 func verifyParameters(tv testVector, ctx cipherContext) {
-	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'zz'", tv.zz, ctx.setupParams.zz)
+	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'shared_secret'", tv.sharedSecret, ctx.setupParams.sharedSecret)
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'enc'", tv.enc, ctx.setupParams.enc)
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'key_schedule_context'", tv.keyScheduleContext, ctx.contextParams.keyScheduleContext)
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'secret'", tv.secret, ctx.contextParams.secret)
@@ -659,7 +659,7 @@ func generateTestVector(t *testing.T, setup setupMode, kem_id KEMID, kdf_id KDFI
 		psk:                psk,
 		psk_id:             psk_id,
 		enc:                ctxI.setupParams.enc,
-		zz:                 ctxI.setupParams.zz,
+		sharedSecret:       ctxI.setupParams.sharedSecret,
 		keyScheduleContext: ctxI.contextParams.keyScheduleContext,
 		secret:             ctxI.contextParams.secret,
 		key:                ctxI.key,

@@ -85,10 +85,10 @@ func (s dhkemScheme) getEphemeralKeyPair(rand io.Reader) (KEMPrivateKey, KEMPubl
 	return s.group.DeriveKeyPair(ikm)
 }
 
-func (s dhkemScheme) extractAndExpand(dh []byte, kemContext []byte, Nzz int) []byte {
+func (s dhkemScheme) extractAndExpand(dh []byte, kemContext []byte, Nsecret int) []byte {
 	suiteID := kemSuiteFromID(s.ID())
 	eae_prk := s.group.internalKDF().LabeledExtract(nil, suiteID, "eae_prk", dh)
-	return s.group.internalKDF().LabeledExpand(eae_prk, suiteID, "zz", kemContext, Nzz)
+	return s.group.internalKDF().LabeledExpand(eae_prk, suiteID, "shared_secret", kemContext, Nsecret)
 }
 
 func (s dhkemScheme) Encap(rand io.Reader, pkR KEMPublicKey) ([]byte, []byte, error) {
@@ -109,10 +109,10 @@ func (s dhkemScheme) Encap(rand io.Reader, pkR KEMPublicKey) ([]byte, []byte, er
 	copy(kemContext, enc)
 	copy(kemContext[len(enc):], pkRm)
 
-	Nzz := s.group.internalKDF().OutputSize()
-	zz := s.extractAndExpand(dh, kemContext, Nzz)
+	Nsecret := s.group.internalKDF().OutputSize()
+	sharedSecret := s.extractAndExpand(dh, kemContext, Nsecret)
 
-	return zz, enc, nil
+	return sharedSecret, enc, nil
 }
 
 func (s dhkemScheme) Decap(enc []byte, skR KEMPrivateKey) ([]byte, error) {
@@ -132,10 +132,10 @@ func (s dhkemScheme) Decap(enc []byte, skR KEMPrivateKey) ([]byte, error) {
 	copy(kemContext, enc)
 	copy(kemContext[len(enc):], pkRm)
 
-	Nzz := s.group.internalKDF().OutputSize()
-	zz := s.extractAndExpand(dh, kemContext, Nzz)
+	Nsecret := s.group.internalKDF().OutputSize()
+	sharedSecret := s.extractAndExpand(dh, kemContext, Nsecret)
 
-	return zz, nil
+	return sharedSecret, nil
 }
 
 func (s dhkemScheme) AuthEncap(rand io.Reader, pkR KEMPublicKey, skS KEMPrivateKey) ([]byte, []byte, error) {
@@ -168,10 +168,10 @@ func (s dhkemScheme) AuthEncap(rand io.Reader, pkR KEMPublicKey, skS KEMPrivateK
 	copy(kemContext[Nenc:Nenc+Npk], pkRm)
 	copy(kemContext[Nenc+Npk:], pkSm)
 
-	Nzz := s.group.internalKDF().OutputSize()
-	zz := s.extractAndExpand(dh, kemContext, Nzz)
+	Nsecret := s.group.internalKDF().OutputSize()
+	sharedSecret := s.extractAndExpand(dh, kemContext, Nsecret)
 
-	return zz, enc, nil
+	return sharedSecret, enc, nil
 }
 
 func (s dhkemScheme) AuthDecap(enc []byte, skR KEMPrivateKey, pkS KEMPublicKey) ([]byte, error) {
@@ -203,10 +203,10 @@ func (s dhkemScheme) AuthDecap(enc []byte, skR KEMPrivateKey, pkS KEMPublicKey) 
 	copy(kemContext[Nenc:Nenc+Npk], pkRm)
 	copy(kemContext[Nenc+Npk:], pkSm)
 
-	Nzz := s.group.internalKDF().OutputSize()
-	zz := s.extractAndExpand(dh, kemContext, Nzz)
+	Nsecret := s.group.internalKDF().OutputSize()
+	sharedSecret := s.extractAndExpand(dh, kemContext, Nsecret)
 
-	return zz, nil
+	return sharedSecret, nil
 }
 
 func (s dhkemScheme) PublicKeySize() int {
@@ -444,9 +444,9 @@ func (s x25519Scheme) DH(priv KEMPrivateKey, pub KEMPublicKey) ([]byte, error) {
 	}
 
 	// TODO ScalarMult
-	var zz [32]byte
-	curve25519.ScalarMult(&zz, &xPriv.val, &xPub.val)
-	return zz[:], nil
+	var sharedSecret [32]byte
+	curve25519.ScalarMult(&sharedSecret, &xPriv.val, &xPub.val)
+	return sharedSecret[:], nil
 }
 
 func (s x25519Scheme) PublicKeySize() int {
@@ -549,9 +549,9 @@ func (s x448Scheme) DH(priv KEMPrivateKey, pub KEMPublicKey) ([]byte, error) {
 		return nil, fmt.Errorf("Public key not suitable for X448: %+v", pub)
 	}
 
-	var zz [56]byte
-	x448.ScalarMult(&zz, &xPriv.val, &xPub.val)
-	return zz[:], nil
+	var sharedSecret [56]byte
+	x448.ScalarMult(&sharedSecret, &xPriv.val, &xPub.val)
+	return sharedSecret[:], nil
 }
 
 func (s x448Scheme) PublicKeySize() int {
@@ -680,13 +680,13 @@ func (s sikeScheme) Encap(rand io.Reader, pkR KEMPublicKey) ([]byte, []byte, err
 	}
 
 	enc := make([]byte, kem.CiphertextSize())
-	zz := make([]byte, s.KDF.OutputSize())
-	err = kem.Encapsulate(enc, zz, raw.pub)
+	sharedSecret := make([]byte, s.KDF.OutputSize())
+	err = kem.Encapsulate(enc, sharedSecret, raw.pub)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	return zz, enc, nil
+	return sharedSecret, enc, nil
 }
 
 type panicReader struct{}
@@ -703,13 +703,13 @@ func (s sikeScheme) Decap(enc []byte, skR KEMPrivateKey) ([]byte, error) {
 		return nil, err
 	}
 
-	zz := make([]byte, s.KDF.OutputSize())
-	err = kem.Decapsulate(zz, raw.priv, raw.pub, enc)
+	sharedSecret := make([]byte, s.KDF.OutputSize())
+	err = kem.Decapsulate(sharedSecret, raw.priv, raw.pub, enc)
 	if err != nil {
 		return nil, err
 	}
 
-	return zz, nil
+	return sharedSecret, nil
 }
 
 func (s sikeScheme) PublicKeySize() int {

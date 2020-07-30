@@ -35,18 +35,18 @@ func TestKEMSchemes(t *testing.T) {
 			t.Fatalf("[%d] Error generating KEM key pair: %v", i, err)
 		}
 
-		zzI, enc, err := s.Encap(rand.Reader, pkR)
+		sharedSecretI, enc, err := s.Encap(rand.Reader, pkR)
 		if err != nil {
 			t.Fatalf("[%d] Error in KEM encapsulation: %v", i, err)
 		}
 
-		zzR, err := s.Decap(enc, skR)
+		sharedSecretR, err := s.Decap(enc, skR)
 		if err != nil {
 			t.Fatalf("[%d] Error in KEM decapsulation: %v", i, err)
 		}
 
-		if !bytes.Equal(zzI, zzR) {
-			t.Fatalf("[%d] Asymmetric KEM results [%x] != [%x]", i, zzI, zzR)
+		if !bytes.Equal(sharedSecretI, sharedSecretR) {
+			t.Fatalf("[%d] Asymmetric KEM results [%x] != [%x]", i, sharedSecretI, sharedSecretR)
 		}
 	}
 }
@@ -79,18 +79,18 @@ func TestDHSchemes(t *testing.T) {
 			t.Fatalf("[%d] Error parsing DH public key: %v", i, err)
 		}
 
-		zzAB, err := s.DH(skA, pkB)
+		sharedSecretAB, err := s.DH(skA, pkB)
 		if err != nil {
 			t.Fatalf("[%d] Error performing DH operation: %v", i, err)
 		}
 
-		zzBA, err := s.DH(skB, pkA)
+		sharedSecretBA, err := s.DH(skB, pkA)
 		if err != nil {
 			t.Fatalf("[%d] Error performing DH operation: %v", i, err)
 		}
 
-		if !bytes.Equal(zzAB, zzBA) {
-			t.Fatalf("[%d] Asymmetric DH results [%x] != [%x]", i, zzAB, zzBA)
+		if !bytes.Equal(sharedSecretAB, sharedSecretBA) {
+			t.Fatalf("[%d] Asymmetric DH results [%x] != [%x]", i, sharedSecretAB, sharedSecretBA)
 		}
 
 		if len(s.Serialize(pkA)) != len(s.Serialize(pkB)) {
