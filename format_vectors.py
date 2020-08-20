@@ -85,6 +85,7 @@ testSuites = [
     CipherSuite(kem_idX25519, kdf_idSHA256, aead_idAES128GCM),
     CipherSuite(kem_idX25519, kdf_idSHA256, aead_idChaCha20Poly1305),
     CipherSuite(kem_idP256, kdf_idSHA256, aead_idAES128GCM),
+    CipherSuite(kem_idP256, kdf_idSHA512, aead_idAES128GCM),
     CipherSuite(kem_idP256, kdf_idSHA256, aead_idChaCha20Poly1305),
     CipherSuite(kem_idP521, kdf_idSHA512, aead_idAES256GCM),
 ]
