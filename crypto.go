@@ -336,8 +336,12 @@ func (s ecdhScheme) DH(priv KEMPrivateKey, pub KEMPublicKey) ([]byte, error) {
 		return nil, fmt.Errorf("Public key not suitable for ECDH")
 	}
 
-	x, y := s.curve.Params().ScalarMult(ecdhPub.x, ecdhPub.y, ecdhPriv.d)
-	dh := elliptic.Marshal(ecdhPub.curve, x, y)
+	x, _ := s.curve.Params().ScalarMult(ecdhPub.x, ecdhPub.y, ecdhPriv.d)
+	xx := x.Bytes()
+
+	size := (s.curve.Params().BitSize + 7) >> 3
+	pad := make([]byte, size-len(xx))
+	dh := append(pad, xx...)
 
 	return dh, nil
 }
@@ -443,7 +447,6 @@ func (s x25519Scheme) DH(priv KEMPrivateKey, pub KEMPublicKey) ([]byte, error) {
 		return nil, fmt.Errorf("Private key not suitable for X25519")
 	}
 
-	// TODO ScalarMult
 	var sharedSecret [32]byte
 	curve25519.ScalarMult(&sharedSecret, &xPriv.val, &xPub.val)
 	return sharedSecret[:], nil
