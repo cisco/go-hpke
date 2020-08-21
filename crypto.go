@@ -984,3 +984,10 @@ func kemSuiteFromID(id KEMID) []byte {
 	binary.BigEndian.PutUint16(idBuffer, uint16(id))
 	return append([]byte("KEM"), idBuffer...)
 }
+
+func AeadSchemeFromAeadID(id AEADID) AEADScheme {
+	if scheme, ok := aeads[id]; ok {
+		return scheme
+	}
+	return nil
+}

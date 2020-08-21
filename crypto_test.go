@@ -142,3 +142,31 @@ func TestAEADSchemes(t *testing.T) {
 		}
 	}
 }
+
+func TestAeadSchemeFromAeadID(t *testing.T) {
+	const AEAD_DOESNOTEXIST AEADID = 0x0101
+	availableAeads := []AEADID{AEAD_AESGCM128, AEAD_AESGCM256, AEAD_CHACHA20POLY1305, AEAD_DOESNOTEXIST}
+	for _, aead := range availableAeads {
+		scheme := AeadSchemeFromAeadID(aead)
+		if aead == AEAD_AESGCM128 {
+			keySize := scheme.KeySize()
+			if keySize != 16 {
+				t.Fatalf("%v KeySize incorrect", aead)
+			}
+		} else if aead == AEAD_AESGCM256 {
+			keySize := scheme.KeySize()
+			if keySize != 32 {
+				t.Fatalf("%v KeySize incorrect", aead)
+			}
+		} else if aead == AEAD_CHACHA20POLY1305 {
+			keySize := scheme.KeySize()
+			if keySize != 32 {
+				t.Fatalf("%v KeySize incorrect", aead)
+			}
+		} else if aead == AEAD_DOESNOTEXIST {
+			if scheme != nil {
+				t.Fatalf("%v Should have been nil but is not", aead)
+			}
+		}
+	}
+}
