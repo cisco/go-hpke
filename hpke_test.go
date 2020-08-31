@@ -105,6 +105,30 @@ func assertBytesEqual(t *testing.T, suite CipherSuite, msg string, lhs, rhs []by
 	assert(t, suite, realMsg, bytes.Equal(lhs, rhs))
 }
 
+func assertCipherContextEqual(t *testing.T, suite CipherSuite, msg string, lhs, rhs context) {
+	// Verify the serialized fields match.
+	assert(t, suite, fmt.Sprintf("%s: %s", msg, "role"), lhs.Role == rhs.Role)
+	assert(t, suite, fmt.Sprintf("%s: %s", msg, "KEM id"), lhs.KEMID == rhs.KEMID)
+	assert(t, suite, fmt.Sprintf("%s: %s", msg, "KDF id"), lhs.KDFID == rhs.KDFID)
+	assert(t, suite, fmt.Sprintf("%s: %s", msg, "AEAD id"), lhs.AEADID == rhs.AEADID)
+	assertBytesEqual(t, suite, fmt.Sprintf("%s: %s", msg, "exporter secret"), lhs.ExporterSecret, rhs.ExporterSecret)
+	assertBytesEqual(t, suite, fmt.Sprintf("%s: %s", msg, "key"), lhs.Key, rhs.Key)
+	assertBytesEqual(t, suite, fmt.Sprintf("%s: %s", msg, "nonce"), lhs.Nonce, rhs.Nonce)
+	assert(t, suite, fmt.Sprintf("%s: %s", msg, "sequence number"), lhs.Seq == rhs.Seq)
+
+	// Verify that the internal AEAD object uses the same algorithm and is keyed
+	// with the same key.
+	var got, want []byte
+	lhs.aead.Seal(got, lhs.Nonce, nil, nil)
+	rhs.aead.Seal(want, rhs.Nonce, nil, nil)
+	assertBytesEqual(t, suite, fmt.Sprintf("%s: %s", msg, "internal AEAD representation"), got, want)
+
+	// Verify that the internal representation of the cipher suite matches.
+	assert(t, suite, fmt.Sprintf("%s: %s", msg, "KEM scheme representation"), lhs.suite.KEM.ID() == rhs.suite.KEM.ID())
+	assert(t, suite, fmt.Sprintf("%s: %s", msg, "KDF scheme representation"), lhs.suite.KDF.ID() == rhs.suite.KDF.ID())
+	assert(t, suite, fmt.Sprintf("%s: %s", msg, "AEAD scheme representation"), lhs.suite.AEAD.ID() == rhs.suite.AEAD.ID())
+}
+
 ///////
 // Symmetric encryption test vector structure
 type encryptionTestVector struct {
@@ -450,6 +474,36 @@ func (rtt roundTripTest) Test(t *testing.T) {
 	exportedI := ctxI.Export(exportContext, exportLength)
 	exportedR := ctxR.Export(exportContext, exportLength)
 	assertBytesEqual(t, suite, "Incorrect exported secret", exportedI, exportedR)
+
+	// Verify encryption context serialization functionality
+	opaqueI, err := ctxI.Marshal()
+	if err != nil {
+		t.Fatalf("[%04x, %04x, %04x] Error serializing encrypt context: %v", rtt.kem_id, rtt.kdf_id, rtt.aead_id, err)
+	}
+
+	unmarshaledI, err := UnmarshalEncryptContext(opaqueI)
+	if err != nil {
+		t.Fatalf("[%04x, %04x, %04x] Error serializing encrypt context: %v", rtt.kem_id, rtt.kdf_id, rtt.aead_id, err)
+	}
+
+	assertCipherContextEqual(t, suite, "Encrypt context serialization mismatch", ctxI.context, unmarshaledI.context)
+
+	// Verify decryption context serialization functionality
+	opaqueR, err := ctxR.Marshal()
+	if err != nil {
+		t.Fatalf("[%04x, %04x, %04x] Error serializing decrypt context: %v", rtt.kem_id, rtt.kdf_id, rtt.aead_id, err)
+	}
+
+	unmarshaledR, err := UnmarshalDecryptContext(opaqueR)
+	if err != nil {
+		t.Fatalf("[%04x, %04x, %04x] Error serializing decrypt context: %v", rtt.kem_id, rtt.kdf_id, rtt.aead_id, err)
+	}
+
+	assertCipherContextEqual(t, suite, "Decrypt context serialization mismatch", ctxR.context, unmarshaledR.context)
+
+	// Verify exporter functionality for a deserialized context
+	assertBytesEqual(t, suite, "Export after serialization fails for sender", exportedI, unmarshaledI.Export(exportContext, exportLength))
+	assertBytesEqual(t, suite, "Export after serialization fails for receiver", exportedR, unmarshaledR.Export(exportContext, exportLength))
 }
 
 func TestModes(t *testing.T) {
@@ -480,14 +534,14 @@ func verifyEncryptions(tv testVector, enc *EncryptContext, dec *DecryptContext) 
 	}
 }
 
-func verifyParameters(tv testVector, ctx cipherContext) {
+func verifyParameters(tv testVector, ctx context) {
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'shared_secret'", tv.sharedSecret, ctx.setupParams.sharedSecret)
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'enc'", tv.enc, ctx.setupParams.enc)
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'key_schedule_context'", tv.keyScheduleContext, ctx.contextParams.keyScheduleContext)
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'secret'", tv.secret, ctx.contextParams.secret)
-	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'key'", tv.key, ctx.key)
-	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'nonce'", tv.nonce, ctx.nonce)
-	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'exporter_secret'", tv.exporterSecret, ctx.exporterSecret)
+	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'key'", tv.key, ctx.Key)
+	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'nonce'", tv.nonce, ctx.Nonce)
+	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'exporter_secret'", tv.exporterSecret, ctx.ExporterSecret)
 }
 
 func verifyPublicKeysEqual(tv testVector, pkX, pkY KEMPublicKey) {
@@ -533,8 +587,8 @@ func verifyTestVector(tv testVector) {
 	ctxR, err := setup.R(tv.suite, skR, tv.enc, tv.info, pkS, tv.psk, tv.psk_id)
 	assertNotError(tv.t, tv.suite, "Error in SetupR", err)
 
-	verifyParameters(tv, ctxI.cipherContext)
-	verifyParameters(tv, ctxR.cipherContext)
+	verifyParameters(tv, ctxI.context)
+	verifyParameters(tv, ctxR.context)
 
 	verifyEncryptions(tv, ctxI, ctxR)
 }
@@ -662,9 +716,9 @@ func generateTestVector(t *testing.T, setup setupMode, kem_id KEMID, kdf_id KDFI
 		sharedSecret:       ctxI.setupParams.sharedSecret,
 		keyScheduleContext: ctxI.contextParams.keyScheduleContext,
 		secret:             ctxI.contextParams.secret,
-		key:                ctxI.key,
-		nonce:              ctxI.nonce,
-		exporterSecret:     ctxI.exporterSecret,
+		key:                ctxI.Key,
+		nonce:              ctxI.Nonce,
+		exporterSecret:     ctxI.ExporterSecret,
 		encryptions:        encryptionVectors,
 		exports:            exportVectors,
 	}
