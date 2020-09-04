@@ -184,40 +184,108 @@ func keySchedule(suite CipherSuite, mode Mode, sharedSecret, info, psk, pskID []
 	return params, nil
 }
 
-type cipherContext struct {
-	key            []byte
-	nonce          []byte
-	exporterSecret []byte
-	aead           cipher.AEAD
-	seq            uint64
-	suite          CipherSuite
+// contextRole specifies the role of a party in possession of a Context: if
+// equal to `contextRoleSender`, then the party is the sender; if equal to
+// `contextRoleReceiver`, then the party is the receiver.
+type contextRole uint8
+
+const (
+	contextRoleSender   contextRole = 0x00
+	contextRoleReceiver contextRole = 0x01
+)
+
+// context represents an HPKE context encoded on the wire.
+type context struct {
+	// Marshaled fields
+	Role           contextRole
+	KEMID          KEMID
+	KDFID          KDFID
+	AEADID         AEADID
+	ExporterSecret []byte `tls:"head=1"`
+	Key            []byte `tls:"head=1"`
+	Nonce          []byte `tls:"head=1"`
+	Seq            uint64
+
+	// Operational structures
+	aead  cipher.AEAD `tls:"omit"`
+	suite CipherSuite `tls:"omit"`
 
 	// Historical record
-	nonces        [][]byte
-	setupParams   setupParameters
-	contextParams contextParameters
+	nonces        [][]byte          `tls:"omit"`
+	setupParams   setupParameters   `tls:"omit"`
+	contextParams contextParameters `tls:"omit"`
 }
 
-func newCipherContext(suite CipherSuite, setupParams setupParameters, contextParams contextParameters) (cipherContext, error) {
+func newContext(role contextRole, suite CipherSuite, setupParams setupParameters, contextParams contextParameters) (context, error) {
 	key := contextParams.aeadKey()
 	nonce := contextParams.aeadNonce()
 	exporterSecret := contextParams.exporterSecret()
 
 	aead, err := suite.AEAD.New(key)
 	if err != nil {
-		return cipherContext{}, err
+		return context{}, err
 	}
 
-	return cipherContext{key, nonce, exporterSecret, aead, 0, suite, nil, setupParams, contextParams}, nil
+	ctx := context{
+		Role:           role,
+		KEMID:          suite.KEM.ID(),
+		KDFID:          suite.KDF.ID(),
+		AEADID:         suite.AEAD.ID(),
+		ExporterSecret: exporterSecret,
+		Key:            key,
+		Nonce:          nonce,
+		Seq:            0,
+		aead:           aead,
+		suite:          suite,
+		setupParams:    setupParams,
+		contextParams:  contextParams,
+	}
+
+	return ctx, nil
 }
 
-func (ctx *cipherContext) computeNonce() []byte {
-	buf := make([]byte, 8)
-	binary.BigEndian.PutUint64(buf, ctx.seq)
+func unmarshalContext(role contextRole, opaque []byte) (context, error) {
+	var ctx context
+	var err error
+	if _, err = syntax.Unmarshal(opaque, &ctx); err != nil {
+		return context{}, err
+	}
 
-	Nn := len(ctx.nonce)
+	if ctx.Role != role {
+		return context{}, fmt.Errorf("role mismatch")
+	}
+
+	ctx.suite, err = AssembleCipherSuite(ctx.KEMID, ctx.KDFID, ctx.AEADID)
+	if err != nil {
+		return context{}, err
+	}
+
+	// Construct AEAD and validate the key length.
+	ctx.aead, err = ctx.suite.AEAD.New(ctx.Key)
+	if err != nil {
+		return context{}, err
+	}
+
+	// Validate the nonce length.
+	if len(ctx.Nonce) != ctx.aead.NonceSize() {
+		return context{}, fmt.Errorf("nonce length: got %d; want %d", len(ctx.Nonce), ctx.aead.NonceSize())
+	}
+
+	// Validate the exporter secret length.
+	if len(ctx.ExporterSecret) != ctx.suite.KDF.OutputSize() {
+		return context{}, fmt.Errorf("exporter secret length: got %d; want %d", len(ctx.ExporterSecret), ctx.suite.KDF.OutputSize())
+	}
+
+	return ctx, nil
+}
+
+func (ctx *context) computeNonce() []byte {
+	buf := make([]byte, 8)
+	binary.BigEndian.PutUint64(buf, ctx.Seq)
+
+	Nn := len(ctx.Nonce)
 	nonce := make([]byte, Nn)
-	copy(nonce, ctx.nonce)
+	copy(nonce, ctx.Nonce)
 	for i := range buf {
 		nonce[Nn-8+i] ^= buf[i]
 	}
@@ -226,23 +294,27 @@ func (ctx *cipherContext) computeNonce() []byte {
 	return nonce
 }
 
-func (ctx *cipherContext) incrementSeq() {
-	ctx.seq += 1
-	if ctx.seq == 0 {
+func (ctx *context) incrementSeq() {
+	ctx.Seq += 1
+	if ctx.Seq == 0 {
 		panic("sequence number wrapped")
 	}
 }
 
-func (ctx *cipherContext) Export(context []byte, L int) []byte {
-	return ctx.suite.KDF.LabeledExpand(ctx.exporterSecret, ctx.suite.ID(), "sec", context, L)
+func (ctx *context) Export(context []byte, L int) []byte {
+	return ctx.suite.KDF.LabeledExpand(ctx.ExporterSecret, ctx.suite.ID(), "sec", context, L)
+}
+
+func (ctx *context) Marshal() ([]byte, error) {
+	return syntax.Marshal(ctx)
 }
 
 type EncryptContext struct {
-	cipherContext
+	context
 }
 
 func newEncryptContext(suite CipherSuite, setupParams setupParameters, contextParams contextParameters) (*EncryptContext, error) {
-	ctx, err := newCipherContext(suite, setupParams, contextParams)
+	ctx, err := newContext(contextRoleSender, suite, setupParams, contextParams)
 	if err != nil {
 		return nil, err
 	}
@@ -256,12 +328,21 @@ func (ctx *EncryptContext) Seal(aad, pt []byte) []byte {
 	return ct
 }
 
+func UnmarshalEncryptContext(opaque []byte) (*EncryptContext, error) {
+	ctx, err := unmarshalContext(contextRoleSender, opaque)
+	if err != nil {
+		return nil, err
+	}
+
+	return &EncryptContext{ctx}, nil
+}
+
 type DecryptContext struct {
-	cipherContext
+	context
 }
 
 func newDecryptContext(suite CipherSuite, setupParams setupParameters, contextParams contextParameters) (*DecryptContext, error) {
-	ctx, err := newCipherContext(suite, setupParams, contextParams)
+	ctx, err := newContext(contextRoleReceiver, suite, setupParams, contextParams)
 	if err != nil {
 		return nil, err
 	}
@@ -280,7 +361,16 @@ func (ctx *DecryptContext) Open(aad, ct []byte) ([]byte, error) {
 }
 
 func (ctx *DecryptContext) Export(context []byte, L int) []byte {
-	return ctx.suite.KDF.LabeledExpand(ctx.exporterSecret, ctx.suite.ID(), "sec", context, L)
+	return ctx.suite.KDF.LabeledExpand(ctx.ExporterSecret, ctx.suite.ID(), "sec", context, L)
+}
+
+func UnmarshalDecryptContext(opaque []byte) (*DecryptContext, error) {
+	ctx, err := unmarshalContext(contextRoleReceiver, opaque)
+	if err != nil {
+		return nil, err
+	}
+
+	return &DecryptContext{ctx}, nil
 }
 
 ///////
