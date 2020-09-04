@@ -360,10 +360,6 @@ func (ctx *DecryptContext) Open(aad, ct []byte) ([]byte, error) {
 	return pt, nil
 }
 
-func (ctx *DecryptContext) Export(context []byte, L int) []byte {
-	return ctx.suite.KDF.LabeledExpand(ctx.ExporterSecret, ctx.suite.ID(), "sec", context, L)
-}
-
 func UnmarshalDecryptContext(opaque []byte) (*DecryptContext, error) {
 	ctx, err := unmarshalContext(contextRoleReceiver, opaque)
 	if err != nil {
