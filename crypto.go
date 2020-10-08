@@ -447,9 +447,8 @@ func (s x25519Scheme) DH(priv KEMPrivateKey, pub KEMPublicKey) ([]byte, error) {
 		return nil, fmt.Errorf("Private key not suitable for X25519")
 	}
 
-	var sharedSecret [32]byte
-	curve25519.ScalarMult(&sharedSecret, &xPriv.val, &xPub.val)
-	return sharedSecret[:], nil
+	sharedSecret, err := curve25519.X25519(xPriv.val[:], xPub.val[:])
+	return sharedSecret, err
 }
 
 func (s x25519Scheme) PublicKeySize() int {
