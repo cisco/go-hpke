@@ -116,14 +116,14 @@ func assertCipherContextEqual(t *testing.T, suite CipherSuite, msg string, lhs, 
 	assert(t, suite, fmt.Sprintf("%s: %s", msg, "AEAD id"), lhs.AEADID == rhs.AEADID)
 	assertBytesEqual(t, suite, fmt.Sprintf("%s: %s", msg, "exporter secret"), lhs.ExporterSecret, rhs.ExporterSecret)
 	assertBytesEqual(t, suite, fmt.Sprintf("%s: %s", msg, "key"), lhs.Key, rhs.Key)
-	assertBytesEqual(t, suite, fmt.Sprintf("%s: %s", msg, "nonce"), lhs.Nonce, rhs.Nonce)
+	assertBytesEqual(t, suite, fmt.Sprintf("%s: %s", msg, "iv"), lhs.IV, rhs.IV)
 	assert(t, suite, fmt.Sprintf("%s: %s", msg, "sequence number"), lhs.Seq == rhs.Seq)
 
 	// Verify that the internal AEAD object uses the same algorithm and is keyed
 	// with the same key.
 	var got, want []byte
-	lhs.aead.Seal(got, lhs.Nonce, nil, nil)
-	rhs.aead.Seal(want, rhs.Nonce, nil, nil)
+	lhs.aead.Seal(got, lhs.IV, nil, nil)
+	rhs.aead.Seal(want, rhs.IV, nil, nil)
 	assertBytesEqual(t, suite, fmt.Sprintf("%s: %s", msg, "internal AEAD representation"), got, want)
 
 	// Verify that the internal representation of the cipher suite matches.
@@ -210,9 +210,9 @@ type rawTestVector struct {
 	Info   string `json:"info"`
 
 	// Private keys
-	SeedR string `json:"seedR"`
-	SeedS string `json:"seedS,omitempty"`
-	SeedE string `json:"seedE"`
+	IKMR  string `json:"ikmR"`
+	IKMS  string `json:"ikmS,omitempty"`
+	IKME  string `json:"ikmE"`
 	SKR   string `json:"skRm"`
 	SKS   string `json:"skSm,omitempty"`
 	SKE   string `json:"skEm"`
@@ -230,7 +230,7 @@ type rawTestVector struct {
 	KeyScheduleContext string `json:"key_schedule_context"`
 	Secret             string `json:"secret"`
 	Key                string `json:"key"`
-	Nonce              string `json:"nonce"`
+	IV                 string `json:"iv"`
 	ExporterSecret     string `json:"exporter_secret"`
 
 	Encryptions []encryptionTestVector `json:"encryptions"`
@@ -252,9 +252,9 @@ type testVector struct {
 	skR    KEMPrivateKey
 	skS    KEMPrivateKey
 	skE    KEMPrivateKey
-	seedR  []byte
-	seedS  []byte
-	seedE  []byte
+	ikmR   []byte
+	ikmS   []byte
+	ikmE   []byte
 	psk    []byte
 	psk_id []byte
 
@@ -269,7 +269,7 @@ type testVector struct {
 	keyScheduleContext []byte
 	secret             []byte
 	key                []byte
-	nonce              []byte
+	iv                 []byte
 	exporterSecret     []byte
 
 	encryptions []encryptionTestVector
@@ -284,9 +284,9 @@ func (tv testVector) MarshalJSON() ([]byte, error) {
 		AEADID: tv.aead_id,
 		Info:   mustHex(tv.info),
 
-		SeedR: mustHex(tv.seedR),
-		SeedS: mustHex(tv.seedS),
-		SeedE: mustHex(tv.seedE),
+		IKMR:  mustHex(tv.ikmR),
+		IKMS:  mustHex(tv.ikmS),
+		IKME:  mustHex(tv.ikmE),
 		SKR:   mustSerializePriv(tv.suite, tv.skR),
 		SKS:   mustSerializePriv(tv.suite, tv.skS),
 		SKE:   mustSerializePriv(tv.suite, tv.skE),
@@ -302,7 +302,7 @@ func (tv testVector) MarshalJSON() ([]byte, error) {
 		KeyScheduleContext: mustHex(tv.keyScheduleContext),
 		Secret:             mustHex(tv.secret),
 		Key:                mustHex(tv.key),
-		Nonce:              mustHex(tv.nonce),
+		IV:                 mustHex(tv.iv),
 		ExporterSecret:     mustHex(tv.exporterSecret),
 
 		Encryptions: tv.encryptions,
@@ -340,16 +340,16 @@ func (tv *testVector) UnmarshalJSON(data []byte) error {
 	tv.psk = mustUnhex(tv.t, raw.PSK)
 	tv.psk_id = mustUnhex(tv.t, raw.PSKID)
 
-	tv.seedR = mustUnhex(tv.t, raw.SeedR)
-	tv.seedS = mustUnhex(tv.t, raw.SeedS)
-	tv.seedE = mustUnhex(tv.t, raw.SeedE)
+	tv.ikmR = mustUnhex(tv.t, raw.IKMR)
+	tv.ikmS = mustUnhex(tv.t, raw.IKMS)
+	tv.ikmE = mustUnhex(tv.t, raw.IKME)
 
 	tv.enc = mustUnhex(tv.t, raw.Enc)
 	tv.sharedSecret = mustUnhex(tv.t, raw.SharedSecret)
 	tv.keyScheduleContext = mustUnhex(tv.t, raw.KeyScheduleContext)
 	tv.secret = mustUnhex(tv.t, raw.Secret)
 	tv.key = mustUnhex(tv.t, raw.Key)
-	tv.nonce = mustUnhex(tv.t, raw.Nonce)
+	tv.iv = mustUnhex(tv.t, raw.IV)
 	tv.exporterSecret = mustUnhex(tv.t, raw.ExporterSecret)
 
 	tv.encryptions = raw.Encryptions
@@ -543,7 +543,7 @@ func verifyParameters(tv testVector, ctx context) {
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'key_schedule_context'", tv.keyScheduleContext, ctx.contextParams.keyScheduleContext)
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'secret'", tv.secret, ctx.contextParams.secret)
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'key'", tv.key, ctx.Key)
-	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'nonce'", tv.nonce, ctx.Nonce)
+	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'iv'", tv.iv, ctx.IV)
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'exporter_secret'", tv.exporterSecret, ctx.ExporterSecret)
 }
 
@@ -562,12 +562,12 @@ func verifyPrivateKeysEqual(tv testVector, skX, skY KEMPrivateKey) {
 func verifyTestVector(tv testVector) {
 	setup := setupModes[tv.mode]
 
-	skR, pkR, err := tv.suite.KEM.DeriveKeyPair(tv.seedR)
+	skR, pkR, err := tv.suite.KEM.DeriveKeyPair(tv.ikmR)
 	assertNotError(tv.t, tv.suite, "Error in DeriveKeyPair", err)
 	verifyPublicKeysEqual(tv, tv.pkR, pkR)
 	verifyPrivateKeysEqual(tv, tv.skR, skR)
 
-	skE, pkE, err := tv.suite.KEM.DeriveKeyPair(tv.seedE)
+	skE, pkE, err := tv.suite.KEM.DeriveKeyPair(tv.ikmE)
 	assertNotError(tv.t, tv.suite, "Error in DeriveKeyPair", err)
 	verifyPublicKeysEqual(tv, tv.pkE, pkE)
 	verifyPrivateKeysEqual(tv, tv.skE, skE)
@@ -577,7 +577,7 @@ func verifyTestVector(tv testVector) {
 	var pkS KEMPublicKey
 	var skS KEMPrivateKey
 	if setup.Mode == modeAuth || setup.Mode == modeAuthPSK {
-		skS, pkS, err = tv.suite.KEM.DeriveKeyPair(tv.seedS)
+		skS, pkS, err = tv.suite.KEM.DeriveKeyPair(tv.ikmS)
 		assertNotError(tv.t, tv.suite, "Error in DeriveKeyPair", err)
 		verifyPublicKeysEqual(tv, tv.pkS, pkS)
 		verifyPrivateKeysEqual(tv, tv.skS, skS)
@@ -663,15 +663,15 @@ func generateTestVector(t *testing.T, setup setupMode, kem_id KEMID, kdf_id KDFI
 		t.Fatalf("[%x, %x, %x] Error looking up ciphersuite: %s", kem_id, kdf_id, aead_id, err)
 	}
 
-	skR, pkR, seedR := mustGenerateKeyPair(t, suite)
-	skE, pkE, seedE := mustGenerateKeyPair(t, suite)
+	skR, pkR, ikmR := mustGenerateKeyPair(t, suite)
+	skE, pkE, ikmE := mustGenerateKeyPair(t, suite)
 
 	// The sender key share is only required for Auth mode variants.
 	var pkS KEMPublicKey
 	var skS KEMPrivateKey
-	var seedS []byte
+	var ikmS []byte
 	if setup.Mode == modeAuth || setup.Mode == modeAuthPSK {
-		skS, pkS, seedS = mustGenerateKeyPair(t, suite)
+		skS, pkS, ikmS = mustGenerateKeyPair(t, suite)
 	}
 
 	// A PSK is only required for PSK mode variants.
@@ -710,9 +710,9 @@ func generateTestVector(t *testing.T, setup setupMode, kem_id KEMID, kdf_id KDFI
 		pkS:                pkS,
 		skE:                skE,
 		pkE:                pkE,
-		seedR:              seedR,
-		seedS:              seedS,
-		seedE:              seedE,
+		ikmR:               ikmR,
+		ikmS:               ikmS,
+		ikmE:               ikmE,
 		psk:                psk,
 		psk_id:             psk_id,
 		enc:                ctxI.setupParams.enc,
@@ -720,7 +720,7 @@ func generateTestVector(t *testing.T, setup setupMode, kem_id KEMID, kdf_id KDFI
 		keyScheduleContext: ctxI.contextParams.keyScheduleContext,
 		secret:             ctxI.contextParams.secret,
 		key:                ctxI.Key,
-		nonce:              ctxI.Nonce,
+		iv:                 ctxI.IV,
 		exporterSecret:     ctxI.ExporterSecret,
 		encryptions:        encryptionVectors,
 		exports:            exportVectors,
