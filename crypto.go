@@ -8,6 +8,7 @@ import (
 	"crypto/elliptic"
 	"crypto/hmac"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -551,8 +552,12 @@ func (s x448Scheme) DH(priv KEMPrivateKey, pub KEMPublicKey) ([]byte, error) {
 		return nil, fmt.Errorf("Public key not suitable for X448: %+v", pub)
 	}
 
-	var sharedSecret [56]byte
+	var sharedSecret, zero [56]byte
 	x448.ScalarMult(&sharedSecret, &xPriv.val, &xPub.val)
+	if subtle.ConstantTimeCompare(sharedSecret[:], zero[:]) == 1 {
+		return nil, fmt.Errorf("bad input point: low order point")
+	}
+
 	return sharedSecret[:], nil
 }
 
