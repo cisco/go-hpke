@@ -303,8 +303,16 @@ func (s ecdhScheme) SerializePrivate(sk KEMPrivateKey) []byte {
 	}
 
 	raw := sk.(*ecdhPrivateKey)
+
+	// Reduce modulo the order of the curve, and store the resulting integer
+	k := new(big.Int)
+	z := new(big.Int)
+	k.SetBytes(raw.d)
+	z.Mod(k, raw.curve.Params().N)
+
+	zBytes := z.Bytes()
 	copied := make([]byte, len(raw.d))
-	copy(copied, raw.d)
+	copy(copied[len(raw.d)-len(zBytes):], zBytes)
 	return copied
 }
 
@@ -322,7 +330,18 @@ func (s ecdhScheme) DeserializePrivate(enc []byte) (KEMPrivateKey, error) {
 		return nil, fmt.Errorf("Invalid input")
 	}
 
-	x, y := s.curve.Params().ScalarBaseMult(enc)
+	k := new(big.Int)
+	k.SetBytes(enc)
+
+	z := new(big.Int)
+	z.Mod(k, s.curve.Params().N)
+
+	zero := big.NewInt(0)
+	if zero.Cmp(z) == 0 {
+		return nil, fmt.Errorf("Invalid private key order")
+	}
+
+	x, y := s.curve.Params().ScalarBaseMult(z.Bytes())
 	return &ecdhPrivateKey{s.curve, enc, x, y}, nil
 }
 
@@ -405,12 +424,25 @@ func (s x25519Scheme) Serialize(pk KEMPublicKey) []byte {
 	return raw.val[:]
 }
 
+func clampX25519(key []byte) []byte {
+	if len(key) != 32 {
+		panic("Invalid key length")
+	}
+
+	copied := key[:]
+	copied[0] &= 248
+	copied[31] &= 127
+	copied[31] |= 64
+
+	return copied
+}
+
 func (s x25519Scheme) SerializePrivate(sk KEMPrivateKey) []byte {
 	if sk == nil {
 		return nil
 	}
 	raw := sk.(*x25519PrivateKey)
-	return raw.val[:]
+	return clampX25519(raw.val[:])
 }
 
 func (s x25519Scheme) Deserialize(enc []byte) (KEMPublicKey, error) {
@@ -432,8 +464,25 @@ func (s x25519Scheme) DeserializePrivate(enc []byte) (KEMPrivateKey, error) {
 		return nil, fmt.Errorf("Error deserializing X25519 private key")
 	}
 
+	copied := clampX25519(enc)
+	var zero [32]byte
+	if subtle.ConstantTimeCompare(copied, zero[:]) == 1 {
+		return nil, fmt.Errorf("bad private key input: low order point")
+	}
+
+	var order = [32]byte{0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x14, 0xde, 0xf9, 0xde, 0xa2, 0xf7, 0x9c, 0xd6, 0x58, 0x12, 0x63, 0x1a, 0x5c, 0xf5, 0xd3, 0xed}
+	k := new(big.Int)
+	k.SetBytes(copied)
+	q := new(big.Int)
+	q.SetBytes(order[:])
+	z := new(big.Int)
+	z.Mod(k, q)
+	if z.Cmp(big.NewInt(0)) == 0 {
+		return nil, fmt.Errorf("bad private key input: low order point")
+	}
+
 	key := &x25519PrivateKey{}
-	copy(key.val[:], enc[0:32])
+	copy(key.val[:], copied[0:32])
 	return key, nil
 }
 
@@ -509,12 +558,24 @@ func (s x448Scheme) Serialize(pk KEMPublicKey) []byte {
 	return raw.val[:]
 }
 
+func clampX448(key []byte) []byte {
+	if len(key) != 56 {
+		panic("Invalid key length")
+	}
+
+	copied := key[:]
+	copied[0] &= 252
+	copied[55] |= 128
+
+	return copied
+}
+
 func (s x448Scheme) SerializePrivate(sk KEMPrivateKey) []byte {
 	if sk == nil {
 		return nil
 	}
 	raw := sk.(*x448PrivateKey)
-	return raw.val[:]
+	return clampX448(raw.val[:])
 }
 
 func (s x448Scheme) Deserialize(enc []byte) (KEMPublicKey, error) {
@@ -536,8 +597,25 @@ func (s x448Scheme) DeserializePrivate(enc []byte) (KEMPrivateKey, error) {
 		return nil, fmt.Errorf("Error deserializing X448 private key")
 	}
 
+	copied := clampX448(enc)
+	var zero [56]byte
+	if subtle.ConstantTimeCompare(copied, zero[:]) == 1 {
+		return nil, fmt.Errorf("bad private key input: low order point")
+	}
+
+	var order = [56]byte{0x3f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7c, 0xca, 0x23, 0xe9, 0xc4, 0x4e, 0xdb, 0x49, 0xae, 0xd6, 0x36, 0x90, 0x21, 0x6c, 0xc2, 0x72, 0x8d, 0xc5, 0x8f, 0x55, 0x23, 0x78, 0xc2, 0x92, 0xab, 0x58, 0x44, 0xf3}
+	k := new(big.Int)
+	k.SetBytes(copied)
+	q := new(big.Int)
+	q.SetBytes(order[:])
+	z := new(big.Int)
+	z.Mod(k, q)
+	if z.Cmp(big.NewInt(0)) == 0 {
+		return nil, fmt.Errorf("bad private key input: low order point")
+	}
+
 	key := &x448PrivateKey{}
-	copy(key.val[:], enc[0:56])
+	copy(key.val[:], copied[0:56])
 	return key, nil
 }
 
