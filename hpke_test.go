@@ -543,7 +543,7 @@ func verifyParameters(tv testVector, ctx context) {
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'key_schedule_context'", tv.keyScheduleContext, ctx.contextParams.keyScheduleContext)
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'secret'", tv.secret, ctx.contextParams.secret)
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'key'", tv.key, ctx.Key)
-	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'base_iv'", tv.baseNonce, ctx.BaseNonce)
+	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'base_nonce'", tv.baseNonce, ctx.BaseNonce)
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'exporter_secret'", tv.exporterSecret, ctx.ExporterSecret)
 }
 
