@@ -332,12 +332,9 @@ func (s ecdhScheme) DeserializePrivate(enc []byte) (KEMPrivateKey, error) {
 
 	k := new(big.Int)
 	k.SetBytes(enc)
-
 	z := new(big.Int)
 	z.Mod(k, s.curve.Params().N)
-
-	zero := big.NewInt(0)
-	if zero.Cmp(z) == 0 {
+	if z.Cmp(big.NewInt(0)) == 0 {
 		return nil, fmt.Errorf("Invalid private key order")
 	}
 
