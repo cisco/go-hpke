@@ -13,7 +13,7 @@ import (
 
 const (
 	debug    = true
-	rfcLabel = "HPKE-05"
+	rfcLabel = "HPKE-06"
 )
 
 type KEMPrivateKey interface {
@@ -147,8 +147,8 @@ func (cp contextParameters) exporterSecret() []byte {
 	return cp.suite.KDF.LabeledExpand(cp.secret, cp.suite.ID(), "exp", cp.keyScheduleContext, cp.suite.KDF.OutputSize())
 }
 
-func (cp contextParameters) aeadNonce() []byte {
-	return cp.suite.KDF.LabeledExpand(cp.secret, cp.suite.ID(), "nonce", cp.keyScheduleContext, cp.suite.AEAD.NonceSize())
+func (cp contextParameters) aeadBaseNonce() []byte {
+	return cp.suite.KDF.LabeledExpand(cp.secret, cp.suite.ID(), "base_nonce", cp.keyScheduleContext, cp.suite.AEAD.NonceSize())
 }
 
 type setupParameters struct {
@@ -172,8 +172,7 @@ func keySchedule(suite CipherSuite, mode Mode, sharedSecret, info, psk, pskID []
 		return contextParameters{}, err
 	}
 
-	pskHash := suite.KDF.LabeledExtract(nil, suiteID, "psk_hash", psk)
-	secret := suite.KDF.LabeledExtract(pskHash, suiteID, "secret", sharedSecret)
+	secret := suite.KDF.LabeledExtract(sharedSecret, suiteID, "secret", psk)
 
 	params := contextParameters{
 		suite:              suite,
@@ -203,7 +202,7 @@ type context struct {
 	AEADID         AEADID
 	ExporterSecret []byte `tls:"head=1"`
 	Key            []byte `tls:"head=1"`
-	Nonce          []byte `tls:"head=1"`
+	BaseNonce      []byte `tls:"head=1"`
 	Seq            uint64
 
 	// Operational structures
@@ -218,7 +217,7 @@ type context struct {
 
 func newContext(role contextRole, suite CipherSuite, setupParams setupParameters, contextParams contextParameters) (context, error) {
 	key := contextParams.aeadKey()
-	nonce := contextParams.aeadNonce()
+	baseNonce := contextParams.aeadBaseNonce()
 	exporterSecret := contextParams.exporterSecret()
 
 	aead, err := suite.AEAD.New(key)
@@ -233,7 +232,7 @@ func newContext(role contextRole, suite CipherSuite, setupParams setupParameters
 		AEADID:         suite.AEAD.ID(),
 		ExporterSecret: exporterSecret,
 		Key:            key,
-		Nonce:          nonce,
+		BaseNonce:      baseNonce,
 		Seq:            0,
 		aead:           aead,
 		suite:          suite,
@@ -267,8 +266,8 @@ func unmarshalContext(role contextRole, opaque []byte) (context, error) {
 	}
 
 	// Validate the nonce length.
-	if len(ctx.Nonce) != ctx.aead.NonceSize() {
-		return context{}, fmt.Errorf("nonce length: got %d; want %d", len(ctx.Nonce), ctx.aead.NonceSize())
+	if len(ctx.BaseNonce) != ctx.aead.NonceSize() {
+		return context{}, fmt.Errorf("base nonce length: got %d; want %d", len(ctx.BaseNonce), ctx.aead.NonceSize())
 	}
 
 	// Validate the exporter secret length.
@@ -283,9 +282,9 @@ func (ctx *context) computeNonce() []byte {
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, ctx.Seq)
 
-	Nn := len(ctx.Nonce)
+	Nn := len(ctx.BaseNonce)
 	nonce := make([]byte, Nn)
-	copy(nonce, ctx.Nonce)
+	copy(nonce, ctx.BaseNonce)
 	for i := range buf {
 		nonce[Nn-8+i] ^= buf[i]
 	}

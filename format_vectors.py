@@ -6,12 +6,12 @@ ordered_keys = [
     # Mode and ciphersuite parameters
     "mode", "kem_id", "kdf_id", "aead_id", "info",
     # Private key material
-    "seedE", "pkE", "skE",
-    "seedR", "pkR", "skR",
-    "seedS", "pkS", "skS",
+    "ikmE", "pkEm", "skEm",
+    "ikmR", "pkRm", "skRm",
+    "ikmS", "pkSm", "skSm",
     "psk", "psk_id",
     # Derived context
-    "enc", "shared_secret", "key_schedule_context", "secret", "key", "nonce", "exporter_secret",
+    "enc", "shared_secret", "key_schedule_context", "secret", "key", "base_nonce", "exporter_secret",
 ]
 
 ordered_encryption_keys = [
