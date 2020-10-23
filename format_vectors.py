@@ -11,7 +11,7 @@ ordered_keys = [
     "ikmS", "pkSm", "skSm",
     "psk", "psk_id",
     # Derived context
-    "enc", "shared_secret", "key_schedule_context", "secret", "key", "iv", "exporter_secret",
+    "enc", "shared_secret", "key_schedule_context", "secret", "key", "base_nonce", "exporter_secret",
 ]
 
 ordered_encryption_keys = [

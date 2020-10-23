@@ -116,14 +116,14 @@ func assertCipherContextEqual(t *testing.T, suite CipherSuite, msg string, lhs, 
 	assert(t, suite, fmt.Sprintf("%s: %s", msg, "AEAD id"), lhs.AEADID == rhs.AEADID)
 	assertBytesEqual(t, suite, fmt.Sprintf("%s: %s", msg, "exporter secret"), lhs.ExporterSecret, rhs.ExporterSecret)
 	assertBytesEqual(t, suite, fmt.Sprintf("%s: %s", msg, "key"), lhs.Key, rhs.Key)
-	assertBytesEqual(t, suite, fmt.Sprintf("%s: %s", msg, "iv"), lhs.IV, rhs.IV)
+	assertBytesEqual(t, suite, fmt.Sprintf("%s: %s", msg, "base_nonce"), lhs.BaseNonce, rhs.BaseNonce)
 	assert(t, suite, fmt.Sprintf("%s: %s", msg, "sequence number"), lhs.Seq == rhs.Seq)
 
 	// Verify that the internal AEAD object uses the same algorithm and is keyed
 	// with the same key.
 	var got, want []byte
-	lhs.aead.Seal(got, lhs.IV, nil, nil)
-	rhs.aead.Seal(want, rhs.IV, nil, nil)
+	lhs.aead.Seal(got, lhs.BaseNonce, nil, nil)
+	rhs.aead.Seal(want, rhs.BaseNonce, nil, nil)
 	assertBytesEqual(t, suite, fmt.Sprintf("%s: %s", msg, "internal AEAD representation"), got, want)
 
 	// Verify that the internal representation of the cipher suite matches.
@@ -230,7 +230,7 @@ type rawTestVector struct {
 	KeyScheduleContext string `json:"key_schedule_context"`
 	Secret             string `json:"secret"`
 	Key                string `json:"key"`
-	IV                 string `json:"iv"`
+	BaseNonce          string `json:"base_nonce"`
 	ExporterSecret     string `json:"exporter_secret"`
 
 	Encryptions []encryptionTestVector `json:"encryptions"`
@@ -269,7 +269,7 @@ type testVector struct {
 	keyScheduleContext []byte
 	secret             []byte
 	key                []byte
-	iv                 []byte
+	baseNonce          []byte
 	exporterSecret     []byte
 
 	encryptions []encryptionTestVector
@@ -302,7 +302,7 @@ func (tv testVector) MarshalJSON() ([]byte, error) {
 		KeyScheduleContext: mustHex(tv.keyScheduleContext),
 		Secret:             mustHex(tv.secret),
 		Key:                mustHex(tv.key),
-		IV:                 mustHex(tv.iv),
+		BaseNonce:          mustHex(tv.baseNonce),
 		ExporterSecret:     mustHex(tv.exporterSecret),
 
 		Encryptions: tv.encryptions,
@@ -349,7 +349,7 @@ func (tv *testVector) UnmarshalJSON(data []byte) error {
 	tv.keyScheduleContext = mustUnhex(tv.t, raw.KeyScheduleContext)
 	tv.secret = mustUnhex(tv.t, raw.Secret)
 	tv.key = mustUnhex(tv.t, raw.Key)
-	tv.iv = mustUnhex(tv.t, raw.IV)
+	tv.baseNonce = mustUnhex(tv.t, raw.BaseNonce)
 	tv.exporterSecret = mustUnhex(tv.t, raw.ExporterSecret)
 
 	tv.encryptions = raw.Encryptions
@@ -543,7 +543,7 @@ func verifyParameters(tv testVector, ctx context) {
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'key_schedule_context'", tv.keyScheduleContext, ctx.contextParams.keyScheduleContext)
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'secret'", tv.secret, ctx.contextParams.secret)
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'key'", tv.key, ctx.Key)
-	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'iv'", tv.iv, ctx.IV)
+	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'base_iv'", tv.baseNonce, ctx.BaseNonce)
 	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'exporter_secret'", tv.exporterSecret, ctx.ExporterSecret)
 }
 
@@ -720,7 +720,7 @@ func generateTestVector(t *testing.T, setup setupMode, kem_id KEMID, kdf_id KDFI
 		keyScheduleContext: ctxI.contextParams.keyScheduleContext,
 		secret:             ctxI.contextParams.secret,
 		key:                ctxI.Key,
-		iv:                 ctxI.IV,
+		baseNonce:          ctxI.BaseNonce,
 		exporterSecret:     ctxI.ExporterSecret,
 		encryptions:        encryptionVectors,
 		exports:            exportVectors,

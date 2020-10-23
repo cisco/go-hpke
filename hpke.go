@@ -147,8 +147,8 @@ func (cp contextParameters) exporterSecret() []byte {
 	return cp.suite.KDF.LabeledExpand(cp.secret, cp.suite.ID(), "exp", cp.keyScheduleContext, cp.suite.KDF.OutputSize())
 }
 
-func (cp contextParameters) aeadIV() []byte {
-	return cp.suite.KDF.LabeledExpand(cp.secret, cp.suite.ID(), "iv", cp.keyScheduleContext, cp.suite.AEAD.NonceSize())
+func (cp contextParameters) aeadBaseNonce() []byte {
+	return cp.suite.KDF.LabeledExpand(cp.secret, cp.suite.ID(), "base_nonce", cp.keyScheduleContext, cp.suite.AEAD.NonceSize())
 }
 
 type setupParameters struct {
@@ -202,7 +202,7 @@ type context struct {
 	AEADID         AEADID
 	ExporterSecret []byte `tls:"head=1"`
 	Key            []byte `tls:"head=1"`
-	IV             []byte `tls:"head=1"`
+	BaseNonce      []byte `tls:"head=1"`
 	Seq            uint64
 
 	// Operational structures
@@ -217,7 +217,7 @@ type context struct {
 
 func newContext(role contextRole, suite CipherSuite, setupParams setupParameters, contextParams contextParameters) (context, error) {
 	key := contextParams.aeadKey()
-	iv := contextParams.aeadIV()
+	baseNonce := contextParams.aeadBaseNonce()
 	exporterSecret := contextParams.exporterSecret()
 
 	aead, err := suite.AEAD.New(key)
@@ -232,7 +232,7 @@ func newContext(role contextRole, suite CipherSuite, setupParams setupParameters
 		AEADID:         suite.AEAD.ID(),
 		ExporterSecret: exporterSecret,
 		Key:            key,
-		IV:             iv,
+		BaseNonce:      baseNonce,
 		Seq:            0,
 		aead:           aead,
 		suite:          suite,
@@ -266,8 +266,8 @@ func unmarshalContext(role contextRole, opaque []byte) (context, error) {
 	}
 
 	// Validate the nonce length.
-	if len(ctx.IV) != ctx.aead.NonceSize() {
-		return context{}, fmt.Errorf("IV length: got %d; want %d", len(ctx.IV), ctx.aead.NonceSize())
+	if len(ctx.BaseNonce) != ctx.aead.NonceSize() {
+		return context{}, fmt.Errorf("base nonce length: got %d; want %d", len(ctx.BaseNonce), ctx.aead.NonceSize())
 	}
 
 	// Validate the exporter secret length.
@@ -282,9 +282,9 @@ func (ctx *context) computeNonce() []byte {
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, ctx.Seq)
 
-	Nn := len(ctx.IV)
+	Nn := len(ctx.BaseNonce)
 	nonce := make([]byte, Nn)
-	copy(nonce, ctx.IV)
+	copy(nonce, ctx.BaseNonce)
 	for i := range buf {
 		nonce[Nn-8+i] ^= buf[i]
 	}
