@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/cloudflare/circl/dh/sidh"
+
+	"github.com/stretchr/testify/require"
 )
 
 func randomBytes(size int) []byte {
@@ -73,8 +75,8 @@ func TestDHSchemes(t *testing.T) {
 			t.Fatalf("[%d] Error generating DH key pair: %v", i, err)
 		}
 
-		enc := s.Serialize(pkA)
-		_, err = s.Deserialize(enc)
+		enc := s.SerializePublicKey(pkA)
+		_, err = s.DeserializePublicKey(enc)
 		if err != nil {
 			t.Fatalf("[%d] Error parsing DH public key: %v", i, err)
 		}
@@ -93,8 +95,8 @@ func TestDHSchemes(t *testing.T) {
 			t.Fatalf("[%d] Asymmetric DH results [%x] != [%x]", i, sharedSecretAB, sharedSecretBA)
 		}
 
-		if len(s.Serialize(pkA)) != len(s.Serialize(pkB)) {
-			t.Fatalf("[%d] Non-constant public key size [%x] != [%x]", i, len(s.Serialize(pkA)), len(s.Serialize(pkB)))
+		if len(s.SerializePublicKey(pkA)) != len(s.SerializePublicKey(pkB)) {
+			t.Fatalf("[%d] Non-constant public key size [%x] != [%x]", i, len(s.SerializePublicKey(pkA)), len(s.SerializePublicKey(pkB)))
 		}
 	}
 }
@@ -141,4 +143,20 @@ func TestAEADSchemes(t *testing.T) {
 			t.Fatalf("[%d] AAD not included in ciphertext", i)
 		}
 	}
+}
+
+func TestExportOnlyAEADScheme(t *testing.T) {
+	scheme, ok := aeads[AEAD_EXPORT_ONLY]
+
+	require.True(t, ok, "Export-only AEAD lookup failed")
+	require.Equal(t, scheme.ID(), AEAD_EXPORT_ONLY, "Export-only AEAD ID mismatch")
+	require.Panics(t, func() {
+		_, _ = scheme.New([]byte{0x00})
+	}, "New() did not panic")
+	require.Panics(t, func() {
+		_ = scheme.KeySize()
+	}, "KeySize() did not panic")
+	require.Panics(t, func() {
+		_ = scheme.NonceSize()
+	}, "NonceSize() did not panic")
 }
