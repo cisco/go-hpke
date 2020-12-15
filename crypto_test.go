@@ -1,7 +1,6 @@
 package hpke
 
 import (
-	"bytes"
 	"crypto"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -28,28 +27,20 @@ func TestKEMSchemes(t *testing.T) {
 		&sikeScheme{field: sidh.Fp751, KDF: hkdfScheme{hash: crypto.SHA512}},
 	}
 
-	for i, s := range schemes {
+	for _, s := range schemes {
 		ikm := make([]byte, s.PrivateKeySize())
 		rand.Reader.Read(ikm)
 
 		skR, pkR, err := s.DeriveKeyPair(ikm)
-		if err != nil {
-			t.Fatalf("[%d] Error generating KEM key pair: %v", i, err)
-		}
+		require.Nil(t, err)
 
 		sharedSecretI, enc, err := s.Encap(rand.Reader, pkR)
-		if err != nil {
-			t.Fatalf("[%d] Error in KEM encapsulation: %v", i, err)
-		}
+		require.Nil(t, err)
 
 		sharedSecretR, err := s.Decap(enc, skR)
-		if err != nil {
-			t.Fatalf("[%d] Error in KEM decapsulation: %v", i, err)
-		}
+		require.Nil(t, err)
 
-		if !bytes.Equal(sharedSecretI, sharedSecretR) {
-			t.Fatalf("[%d] Asymmetric KEM results [%x] != [%x]", i, sharedSecretI, sharedSecretR)
-		}
+		require.Equal(t, sharedSecretI, sharedSecretR)
 	}
 }
 
@@ -61,43 +52,31 @@ func TestDHSchemes(t *testing.T) {
 		x448Scheme{},
 	}
 
-	for i, s := range schemes {
+	for _, s := range schemes {
 		ikm := make([]byte, s.PrivateKeySize())
 		rand.Reader.Read(ikm)
 		skA, pkA, err := s.DeriveKeyPair(ikm)
-		if err != nil {
-			t.Fatalf("[%d] Error generating DH key pair: %v", i, err)
-		}
+		require.Nil(t, err)
 
 		rand.Reader.Read(ikm)
 		skB, pkB, err := s.DeriveKeyPair(ikm)
-		if err != nil {
-			t.Fatalf("[%d] Error generating DH key pair: %v", i, err)
-		}
+		require.Nil(t, err)
 
 		enc := s.SerializePublicKey(pkA)
 		_, err = s.DeserializePublicKey(enc)
-		if err != nil {
-			t.Fatalf("[%d] Error parsing DH public key: %v", i, err)
-		}
+		require.Nil(t, err)
 
 		sharedSecretAB, err := s.DH(skA, pkB)
-		if err != nil {
-			t.Fatalf("[%d] Error performing DH operation: %v", i, err)
-		}
+		require.Nil(t, err)
 
 		sharedSecretBA, err := s.DH(skB, pkA)
-		if err != nil {
-			t.Fatalf("[%d] Error performing DH operation: %v", i, err)
-		}
+		require.Nil(t, err)
 
-		if !bytes.Equal(sharedSecretAB, sharedSecretBA) {
-			t.Fatalf("[%d] Asymmetric DH results [%x] != [%x]", i, sharedSecretAB, sharedSecretBA)
-		}
+		require.Equal(t, sharedSecretAB, sharedSecretBA)
 
-		if len(s.SerializePublicKey(pkA)) != len(s.SerializePublicKey(pkB)) {
-			t.Fatalf("[%d] Non-constant public key size [%x] != [%x]", i, len(s.SerializePublicKey(pkA)), len(s.SerializePublicKey(pkB)))
-		}
+		pkAm := s.SerializePublicKey(pkA)
+		pkBm := s.SerializePublicKey(pkB)
+		require.Equal(t, len(pkAm), len(pkBm))
 	}
 }
 
@@ -108,40 +87,25 @@ func TestAEADSchemes(t *testing.T) {
 		chachaPolyScheme{},
 	}
 
-	for i, s := range schemes {
+	for _, s := range schemes {
 		key := randomBytes(int(s.KeySize()))
 		nonce := randomBytes(int(s.NonceSize()))
 		pt := randomBytes(1024)
 		aad := randomBytes(1024)
 
 		aead, err := s.New(key)
-		if err != nil {
-			t.Fatalf("[%d] Error instantiating AEAD: %v", i, err)
-		}
+		require.Nil(t, err)
 
 		ctWithAAD := aead.Seal(nil, nonce, pt, aad)
 		ptWithAAD, err := aead.Open(nil, nonce, ctWithAAD, aad)
-		if err != nil {
-			t.Fatalf("[%d] Error decrypting with AAD: %v", i, err)
-		}
-
-		if !bytes.Equal(ptWithAAD, pt) {
-			t.Fatalf("[%d] Incorrect decryption [%x] != [%x]", i, ptWithAAD, pt)
-		}
+		require.Nil(t, err)
+		require.Equal(t, ptWithAAD, pt)
 
 		ctWithoutAAD := aead.Seal(nil, nonce, pt, nil)
 		ptWithoutAAD, err := aead.Open(nil, nonce, ctWithoutAAD, nil)
-		if err != nil {
-			t.Fatalf("[%d] Error decrypting without AAD: %v", i, err)
-		}
-
-		if !bytes.Equal(ptWithoutAAD, pt) {
-			t.Fatalf("[%d] Incorrect decryption [%x] != [%x]", i, ptWithoutAAD, pt)
-		}
-
-		if bytes.Equal(ctWithAAD, ctWithoutAAD) {
-			t.Fatalf("[%d] AAD not included in ciphertext", i)
-		}
+		require.Nil(t, err)
+		require.Equal(t, ptWithoutAAD, pt)
+		require.NotEqual(t, ctWithAAD, ctWithoutAAD)
 	}
 }
 
@@ -150,13 +114,7 @@ func TestExportOnlyAEADScheme(t *testing.T) {
 
 	require.True(t, ok, "Export-only AEAD lookup failed")
 	require.Equal(t, scheme.ID(), AEAD_EXPORT_ONLY, "Export-only AEAD ID mismatch")
-	require.Panics(t, func() {
-		_, _ = scheme.New([]byte{0x00})
-	}, "New() did not panic")
-	require.Panics(t, func() {
-		_ = scheme.KeySize()
-	}, "KeySize() did not panic")
-	require.Panics(t, func() {
-		_ = scheme.NonceSize()
-	}, "NonceSize() did not panic")
+	require.Panics(t, func() { scheme.New([]byte{0x00}) })
+	require.Panics(t, func() { scheme.KeySize() })
+	require.Panics(t, func() { scheme.NonceSize() })
 }

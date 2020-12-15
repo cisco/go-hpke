@@ -220,8 +220,9 @@ func newContext(role contextRole, suite CipherSuite, setupParams setupParameters
 
 	// Derive encryption and decryption secrets only if needed for the given ciphersuite
 	var err error
-	var key, baseNonce []byte
 	var aead cipher.AEAD
+	key := []byte{}
+	baseNonce := []byte{}
 	if suite.AEAD.ID() != AEAD_EXPORT_ONLY {
 		key = contextParams.aeadKey()
 		baseNonce = contextParams.aeadBaseNonce()

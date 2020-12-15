@@ -1,7 +1,6 @@
 package hpke
 
 import (
-	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -9,6 +8,8 @@ import (
 	"io/ioutil"
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -34,20 +35,12 @@ const (
 
 ///////
 // Infallible Serialize / Deserialize
-func fatalOnError(t *testing.T, err error, msg string) {
-	realMsg := fmt.Sprintf("%s: %v", msg, err)
-	if err != nil {
-		if t != nil {
-			t.Fatalf(realMsg)
-		} else {
-			panic(realMsg)
-		}
-	}
-}
-
-func mustUnhex(t *testing.T, h string) []byte {
+func mustUnhex(h string) []byte {
 	out, err := hex.DecodeString(h)
-	fatalOnError(t, err, "Unhex failed")
+	if err != nil {
+		panic(err)
+	}
+
 	return out
 }
 
@@ -55,11 +48,11 @@ func mustHex(d []byte) string {
 	return hex.EncodeToString(d)
 }
 
-func mustDeserializePriv(t *testing.T, suite CipherSuite, h string, required bool) KEMPrivateKey {
-	skm := mustUnhex(t, h)
+func mustDeserializePriv(suite CipherSuite, h string, required bool) KEMPrivateKey {
+	skm := mustUnhex(h)
 	sk, err := suite.KEM.DeserializePrivateKey(skm)
-	if required {
-		fatalOnError(t, err, "DeserializePrivate failed")
+	if required && err != nil {
+		panic(err)
 	}
 	return sk
 }
@@ -68,11 +61,11 @@ func mustSerializePriv(suite CipherSuite, priv KEMPrivateKey) string {
 	return mustHex(suite.KEM.SerializePrivateKey(priv))
 }
 
-func mustDeserializePub(t *testing.T, suite CipherSuite, h string, required bool) KEMPublicKey {
-	pkm := mustUnhex(t, h)
+func mustDeserializePub(suite CipherSuite, h string, required bool) KEMPublicKey {
+	pkm := mustUnhex(h)
 	pk, err := suite.KEM.DeserializePublicKey(pkm)
-	if required {
-		fatalOnError(t, err, "DeserializePublicKey failed")
+	if required && err != nil {
+		panic(err)
 	}
 	return pk
 }
@@ -81,47 +74,31 @@ func mustSerializePub(suite CipherSuite, pub KEMPublicKey) string {
 	return mustHex(suite.KEM.SerializePublicKey(pub))
 }
 
-func mustGenerateKeyPair(t *testing.T, suite CipherSuite) (KEMPrivateKey, KEMPublicKey, []byte) {
+func mustGenerateKeyPair(suite CipherSuite) (KEMPrivateKey, KEMPublicKey, []byte) {
 	ikm := make([]byte, suite.KEM.PrivateKeySize())
 	rand.Reader.Read(ikm)
 	sk, pk, err := suite.KEM.DeriveKeyPair(ikm)
-	fatalOnError(t, err, "Error generating DH key pair")
+	if err != nil {
+		panic(err)
+	}
 	return sk, pk, ikm
 }
 
-///////
-// Assertions
-func assert(t *testing.T, suite CipherSuite, msg string, test bool) {
-	if !test {
-		t.Fatalf("[%04x, %04x, %04x] %s", suite.KEM.ID(), suite.KDF.ID(), suite.AEAD.ID(), msg)
-	}
-}
-
-func assertNotError(t *testing.T, suite CipherSuite, msg string, err error) {
-	realMsg := fmt.Sprintf("%s: %v", msg, err)
-	assert(t, suite, realMsg, err == nil)
-}
-
-func assertBytesEqual(t *testing.T, suite CipherSuite, msg string, lhs, rhs []byte) {
-	realMsg := fmt.Sprintf("%s: [%x] != [%x]", msg, lhs, rhs)
-	assert(t, suite, realMsg, bytes.Equal(lhs, rhs))
-}
-
-func assertCipherContextEqual(t *testing.T, suite CipherSuite, msg string, lhs, rhs context) {
+func verifyCipherContextEqual(t *testing.T, lhs, rhs context) {
 	// Verify the serialized fields match.
-	assert(t, suite, fmt.Sprintf("%s: %s", msg, "role"), lhs.Role == rhs.Role)
-	assert(t, suite, fmt.Sprintf("%s: %s", msg, "KEM id"), lhs.KEMID == rhs.KEMID)
-	assert(t, suite, fmt.Sprintf("%s: %s", msg, "KDF id"), lhs.KDFID == rhs.KDFID)
-	assert(t, suite, fmt.Sprintf("%s: %s", msg, "AEAD id"), lhs.AEADID == rhs.AEADID)
-	assertBytesEqual(t, suite, fmt.Sprintf("%s: %s", msg, "exporter secret"), lhs.ExporterSecret, rhs.ExporterSecret)
-	assertBytesEqual(t, suite, fmt.Sprintf("%s: %s", msg, "key"), lhs.Key, rhs.Key)
-	assertBytesEqual(t, suite, fmt.Sprintf("%s: %s", msg, "base_nonce"), lhs.BaseNonce, rhs.BaseNonce)
-	assert(t, suite, fmt.Sprintf("%s: %s", msg, "sequence number"), lhs.Seq == rhs.Seq)
+	require.Equal(t, lhs.Role, rhs.Role)
+	require.Equal(t, lhs.KEMID, rhs.KEMID)
+	require.Equal(t, lhs.KDFID, rhs.KDFID)
+	require.Equal(t, lhs.AEADID, rhs.AEADID)
+	require.Equal(t, lhs.ExporterSecret, rhs.ExporterSecret)
+	require.Equal(t, lhs.Key, rhs.Key)
+	require.Equal(t, lhs.BaseNonce, rhs.BaseNonce)
+	require.Equal(t, lhs.Seq, rhs.Seq)
 
 	// Verify that the internal representation of the cipher suite matches.
-	assert(t, suite, fmt.Sprintf("%s: %s", msg, "KEM scheme representation"), lhs.suite.KEM.ID() == rhs.suite.KEM.ID())
-	assert(t, suite, fmt.Sprintf("%s: %s", msg, "KDF scheme representation"), lhs.suite.KDF.ID() == rhs.suite.KDF.ID())
-	assert(t, suite, fmt.Sprintf("%s: %s", msg, "AEAD scheme representation"), lhs.suite.AEAD.ID() == rhs.suite.AEAD.ID())
+	require.Equal(t, lhs.suite.KEM.ID(), rhs.suite.KEM.ID())
+	require.Equal(t, lhs.suite.KDF.ID(), rhs.suite.KDF.ID())
+	require.Equal(t, lhs.suite.AEAD.ID(), rhs.suite.AEAD.ID())
 
 	if lhs.AEADID == AEAD_EXPORT_ONLY {
 		return
@@ -129,10 +106,9 @@ func assertCipherContextEqual(t *testing.T, suite CipherSuite, msg string, lhs, 
 
 	// Verify that the internal AEAD object uses the same algorithm and is keyed
 	// with the same key.
-	var got, want []byte
-	lhs.aead.Seal(got, lhs.BaseNonce, nil, nil)
-	rhs.aead.Seal(want, rhs.BaseNonce, nil, nil)
-	assertBytesEqual(t, suite, fmt.Sprintf("%s: %s", msg, "internal AEAD representation"), got, want)
+	got := lhs.aead.Seal(nil, lhs.BaseNonce, nil, nil)
+	want := rhs.aead.Seal(nil, rhs.BaseNonce, nil, nil)
+	require.Equal(t, got, want)
 }
 
 ///////
@@ -160,10 +136,10 @@ func (etv *encryptionTestVector) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	etv.plaintext = mustUnhex(nil, raw["plaintext"])
-	etv.aad = mustUnhex(nil, raw["aad"])
-	etv.nonce = mustUnhex(nil, raw["nonce"])
-	etv.ciphertext = mustUnhex(nil, raw["ciphertext"])
+	etv.plaintext = mustUnhex(raw["plaintext"])
+	etv.aad = mustUnhex(raw["aad"])
+	etv.nonce = mustUnhex(raw["nonce"])
+	etv.ciphertext = mustUnhex(raw["ciphertext"])
 	return nil
 }
 
@@ -196,9 +172,9 @@ func (etv *exporterTestVector) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	etv.exportContext = mustUnhex(nil, raw.ExportContext)
+	etv.exportContext = mustUnhex(raw.ExportContext)
 	etv.exportLength = raw.ExportLength
-	etv.exportValue = mustUnhex(nil, raw.ExportValue)
+	etv.exportValue = mustUnhex(raw.ExportValue)
 	return nil
 }
 
@@ -324,7 +300,7 @@ func (tv *testVector) UnmarshalJSON(data []byte) error {
 	tv.kem_id = raw.KEMID
 	tv.kdf_id = raw.KDFID
 	tv.aead_id = raw.AEADID
-	tv.info = mustUnhex(tv.t, raw.Info)
+	tv.info = mustUnhex(raw.Info)
 
 	tv.suite, err = AssembleCipherSuite(raw.KEMID, raw.KDFID, raw.AEADID)
 	if err != nil {
@@ -332,28 +308,28 @@ func (tv *testVector) UnmarshalJSON(data []byte) error {
 	}
 
 	modeRequiresSenderKey := (tv.mode == modeAuth || tv.mode == modeAuthPSK)
-	tv.skR = mustDeserializePriv(tv.t, tv.suite, raw.SKR, true)
-	tv.skS = mustDeserializePriv(tv.t, tv.suite, raw.SKS, modeRequiresSenderKey)
-	tv.skE = mustDeserializePriv(tv.t, tv.suite, raw.SKE, true)
+	tv.skR = mustDeserializePriv(tv.suite, raw.SKR, true)
+	tv.skS = mustDeserializePriv(tv.suite, raw.SKS, modeRequiresSenderKey)
+	tv.skE = mustDeserializePriv(tv.suite, raw.SKE, true)
 
-	tv.pkR = mustDeserializePub(tv.t, tv.suite, raw.PKR, true)
-	tv.pkS = mustDeserializePub(tv.t, tv.suite, raw.PKS, modeRequiresSenderKey)
-	tv.pkE = mustDeserializePub(tv.t, tv.suite, raw.PKE, true)
+	tv.pkR = mustDeserializePub(tv.suite, raw.PKR, true)
+	tv.pkS = mustDeserializePub(tv.suite, raw.PKS, modeRequiresSenderKey)
+	tv.pkE = mustDeserializePub(tv.suite, raw.PKE, true)
 
-	tv.psk = mustUnhex(tv.t, raw.PSK)
-	tv.psk_id = mustUnhex(tv.t, raw.PSKID)
+	tv.psk = mustUnhex(raw.PSK)
+	tv.psk_id = mustUnhex(raw.PSKID)
 
-	tv.ikmR = mustUnhex(tv.t, raw.IKMR)
-	tv.ikmS = mustUnhex(tv.t, raw.IKMS)
-	tv.ikmE = mustUnhex(tv.t, raw.IKME)
+	tv.ikmR = mustUnhex(raw.IKMR)
+	tv.ikmS = mustUnhex(raw.IKMS)
+	tv.ikmE = mustUnhex(raw.IKME)
 
-	tv.enc = mustUnhex(tv.t, raw.Enc)
-	tv.sharedSecret = mustUnhex(tv.t, raw.SharedSecret)
-	tv.keyScheduleContext = mustUnhex(tv.t, raw.KeyScheduleContext)
-	tv.secret = mustUnhex(tv.t, raw.Secret)
-	tv.key = mustUnhex(tv.t, raw.Key)
-	tv.baseNonce = mustUnhex(tv.t, raw.BaseNonce)
-	tv.exporterSecret = mustUnhex(tv.t, raw.ExporterSecret)
+	tv.enc = mustUnhex(raw.Enc)
+	tv.sharedSecret = mustUnhex(raw.SharedSecret)
+	tv.keyScheduleContext = mustUnhex(raw.KeyScheduleContext)
+	tv.secret = mustUnhex(raw.Secret)
+	tv.key = mustUnhex(raw.Key)
+	tv.baseNonce = mustUnhex(raw.BaseNonce)
+	tv.exporterSecret = mustUnhex(raw.ExporterSecret)
 
 	tv.encryptions = raw.Encryptions
 	tv.exports = raw.Exports
@@ -451,67 +427,57 @@ type roundTripTest struct {
 
 func (rtt roundTripTest) Test(t *testing.T) {
 	suite, err := AssembleCipherSuite(rtt.kem_id, rtt.kdf_id, rtt.aead_id)
-	if err != nil {
-		t.Fatalf("[%04x, %04x, %04x] Error looking up ciphersuite: %v", rtt.kem_id, rtt.kdf_id, rtt.aead_id, err)
-	}
+	require.Nil(t, err)
 
 	if !rtt.setup.OK(suite) {
 		return
 	}
 
-	skS, pkS, _ := mustGenerateKeyPair(t, suite)
-	skR, pkR, _ := mustGenerateKeyPair(t, suite)
+	skS, pkS, _ := mustGenerateKeyPair(suite)
+	skR, pkR, _ := mustGenerateKeyPair(suite)
 
 	enc, ctxS, err := rtt.setup.I(suite, pkR, info, skS, fixedPSK, fixedPSKID)
-	assertNotError(t, suite, "Error in SetupI", err)
+	require.Nil(t, err)
 
 	ctxR, err := rtt.setup.R(suite, skR, enc, info, pkS, fixedPSK, fixedPSKID)
-	assertNotError(t, suite, "Error in SetupR", err)
+	require.Nil(t, err)
 
 	// Verify encryption functionality, if applicable
 	if rtt.aead_id != AEAD_EXPORT_ONLY {
 		for range make([]struct{}, rtts) {
 			encrypted := ctxS.Seal(aad, original)
 			decrypted, err := ctxR.Open(aad, encrypted)
-			assertNotError(t, suite, "Error in Open", err)
-			assertBytesEqual(t, suite, "Incorrect decryption", decrypted, original)
+			require.Nil(t, err)
+			require.Equal(t, decrypted, original)
 		}
 	}
 
 	// Verify exporter functionality
-	exportedI := ctxS.Export(exportContext, exportLength)
+	exportedS := ctxS.Export(exportContext, exportLength)
 	exportedR := ctxR.Export(exportContext, exportLength)
-	assertBytesEqual(t, suite, "Incorrect exported secret", exportedI, exportedR)
+	require.Equal(t, exportedS, exportedR)
 
 	// Verify encryption context serialization functionality
-	opaqueI, err := ctxS.Marshal()
-	if err != nil {
-		t.Fatalf("[%04x, %04x, %04x] Error serializing encrypt context: %v", rtt.kem_id, rtt.kdf_id, rtt.aead_id, err)
-	}
+	opaqueS, err := ctxS.Marshal()
+	require.Nil(t, err)
 
-	unmarshaledI, err := UnmarshalSenderContext(opaqueI)
-	if err != nil {
-		t.Fatalf("[%04x, %04x, %04x] Error serializing encrypt context: %v", rtt.kem_id, rtt.kdf_id, rtt.aead_id, err)
-	}
+	unmarshaledS, err := UnmarshalSenderContext(opaqueS)
+	require.Nil(t, err)
 
-	assertCipherContextEqual(t, suite, "Encrypt context serialization mismatch", ctxS.context, unmarshaledI.context)
+	verifyCipherContextEqual(t, ctxS.context, unmarshaledS.context)
 
 	// Verify decryption context serialization functionality
 	opaqueR, err := ctxR.Marshal()
-	if err != nil {
-		t.Fatalf("[%04x, %04x, %04x] Error serializing decrypt context: %v", rtt.kem_id, rtt.kdf_id, rtt.aead_id, err)
-	}
+	require.Nil(t, err)
 
 	unmarshaledR, err := UnmarshalReceiverContext(opaqueR)
-	if err != nil {
-		t.Fatalf("[%04x, %04x, %04x] Error serializing decrypt context: %v", rtt.kem_id, rtt.kdf_id, rtt.aead_id, err)
-	}
+	require.Nil(t, err)
 
-	assertCipherContextEqual(t, suite, "Decrypt context serialization mismatch", ctxR.context, unmarshaledR.context)
+	verifyCipherContextEqual(t, ctxR.context, unmarshaledR.context)
 
 	// Verify exporter functionality for a deserialized context
-	assertBytesEqual(t, suite, "Export after serialization fails for sender", exportedI, unmarshaledI.Export(exportContext, exportLength))
-	assertBytesEqual(t, suite, "Export after serialization fails for receiver", exportedR, unmarshaledR.Export(exportContext, exportLength))
+	require.Equal(t, exportedS, unmarshaledS.Export(exportContext, exportLength))
+	require.Equal(t, exportedR, unmarshaledR.Export(exportContext, exportLength))
 }
 
 func TestModes(t *testing.T) {
@@ -535,45 +501,45 @@ func verifyEncryptions(tv testVector, enc *SenderContext, dec *ReceiverContext) 
 	for _, data := range tv.encryptions {
 		encrypted := enc.Seal(data.aad, data.plaintext)
 		decrypted, err := dec.Open(data.aad, encrypted)
+		require.Nil(tv.t, err)
 
-		assertNotError(tv.t, tv.suite, "Error in Open", err)
-		assertBytesEqual(tv.t, tv.suite, "Incorrect encryption", encrypted, data.ciphertext)
-		assertBytesEqual(tv.t, tv.suite, "Incorrect decryption", decrypted, data.plaintext)
+		require.Equal(tv.t, encrypted, data.ciphertext)
+		require.Equal(tv.t, decrypted, data.plaintext)
 	}
 }
 
 func verifyParameters(tv testVector, ctx context) {
-	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'shared_secret'", tv.sharedSecret, ctx.setupParams.sharedSecret)
-	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'enc'", tv.enc, ctx.setupParams.enc)
-	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'key_schedule_context'", tv.keyScheduleContext, ctx.contextParams.keyScheduleContext)
-	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'secret'", tv.secret, ctx.contextParams.secret)
-	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'key'", tv.key, ctx.Key)
-	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'base_nonce'", tv.baseNonce, ctx.BaseNonce)
-	assertBytesEqual(tv.t, tv.suite, "Incorrect parameter 'exporter_secret'", tv.exporterSecret, ctx.ExporterSecret)
+	require.Equal(tv.t, tv.sharedSecret, ctx.setupParams.sharedSecret)
+	require.Equal(tv.t, tv.enc, ctx.setupParams.enc)
+	require.Equal(tv.t, tv.keyScheduleContext, ctx.contextParams.keyScheduleContext)
+	require.Equal(tv.t, tv.secret, ctx.contextParams.secret)
+	require.Equal(tv.t, tv.key, ctx.Key)
+	require.Equal(tv.t, tv.baseNonce, ctx.BaseNonce)
+	require.Equal(tv.t, tv.exporterSecret, ctx.ExporterSecret)
 }
 
 func verifyPublicKeysEqual(tv testVector, pkX, pkY KEMPublicKey) {
 	pkXm := mustSerializePub(tv.suite, pkX)
 	pkYm := mustSerializePub(tv.suite, pkY)
-	assertBytesEqual(tv.t, tv.suite, "Incorrect public key", []byte(pkXm), []byte(pkYm))
+	require.Equal(tv.t, []byte(pkXm), []byte(pkYm))
 }
 
 func verifyPrivateKeysEqual(tv testVector, skX, skY KEMPrivateKey) {
 	skXm := mustSerializePriv(tv.suite, skX)
 	skYm := mustSerializePriv(tv.suite, skY)
-	assertBytesEqual(tv.t, tv.suite, "Incorrect private key", []byte(skXm), []byte(skYm))
+	require.Equal(tv.t, []byte(skXm), []byte(skYm))
 }
 
 func verifyTestVector(tv testVector) {
 	setup := setupModes[tv.mode]
 
 	skR, pkR, err := tv.suite.KEM.DeriveKeyPair(tv.ikmR)
-	assertNotError(tv.t, tv.suite, "Error in DeriveKeyPair", err)
+	require.Nil(tv.t, err)
 	verifyPublicKeysEqual(tv, tv.pkR, pkR)
 	verifyPrivateKeysEqual(tv, tv.skR, skR)
 
 	skE, pkE, err := tv.suite.KEM.DeriveKeyPair(tv.ikmE)
-	assertNotError(tv.t, tv.suite, "Error in DeriveKeyPair", err)
+	require.Nil(tv.t, err)
 	verifyPublicKeysEqual(tv, tv.pkE, pkE)
 	verifyPrivateKeysEqual(tv, tv.skE, skE)
 
@@ -583,17 +549,17 @@ func verifyTestVector(tv testVector) {
 	var skS KEMPrivateKey
 	if setup.Mode == modeAuth || setup.Mode == modeAuthPSK {
 		skS, pkS, err = tv.suite.KEM.DeriveKeyPair(tv.ikmS)
-		assertNotError(tv.t, tv.suite, "Error in DeriveKeyPair", err)
+		require.Nil(tv.t, err)
 		verifyPublicKeysEqual(tv, tv.pkS, pkS)
 		verifyPrivateKeysEqual(tv, tv.skS, skS)
 	}
 
 	enc, ctxS, err := setup.I(tv.suite, pkR, tv.info, skS, tv.psk, tv.psk_id)
-	assertNotError(tv.t, tv.suite, "Error in SetupI", err)
-	assertBytesEqual(tv.t, tv.suite, "Encapsulated key mismatch", enc, tv.enc)
+	require.Nil(tv.t, err)
+	require.Equal(tv.t, enc, tv.enc)
 
 	ctxR, err := setup.R(tv.suite, skR, tv.enc, tv.info, pkS, tv.psk, tv.psk_id)
-	assertNotError(tv.t, tv.suite, "Error in SetupR", err)
+	require.Nil(tv.t, err)
 
 	verifyParameters(tv, ctxS.context)
 	verifyParameters(tv, ctxR.context)
@@ -610,9 +576,7 @@ func vectorTest(vector testVector) func(t *testing.T) {
 func verifyTestVectors(t *testing.T, vectorString []byte, subtest bool) {
 	vectors := testVectorArray{t: t}
 	err := json.Unmarshal(vectorString, &vectors)
-	if err != nil {
-		t.Fatalf("Error decoding test vector string: %v", err)
-	}
+	require.Nil(t, err)
 
 	for _, tv := range vectors.vectors {
 		test := vectorTest(tv)
@@ -631,8 +595,8 @@ func generateEncryptions(t *testing.T, suite CipherSuite, ctxS *SenderContext, c
 		aad := []byte(fmt.Sprintf("Count-%d", i))
 		encrypted := ctxS.Seal(aad, original)
 		decrypted, err := ctxR.Open(aad, encrypted)
-		assertNotError(t, suite, "Decryption failure", err)
-		assertBytesEqual(t, suite, "Incorrect decryption", original, decrypted)
+		require.Nil(t, err)
+		require.Equal(t, original, decrypted)
 
 		vectors[i] = encryptionTestVector{
 			plaintext:  original,
@@ -653,13 +617,14 @@ func generateExports(t *testing.T, suite CipherSuite, ctxS *SenderContext, ctxR 
 	}
 	vectors := make([]exporterTestVector, len(exportContexts))
 	for i := 0; i < len(vectors); i++ {
-		exportI := ctxS.Export(exportContexts[i], testVectorExportLength)
+		exportS := ctxS.Export(exportContexts[i], testVectorExportLength)
 		exportR := ctxR.Export(exportContexts[i], testVectorExportLength)
-		assertBytesEqual(t, suite, "Incorrect export", exportI, exportR)
+		require.Equal(t, exportS, exportR)
+
 		vectors[i] = exporterTestVector{
 			exportContext: exportContexts[i],
 			exportLength:  testVectorExportLength,
-			exportValue:   exportI,
+			exportValue:   exportS,
 		}
 	}
 
@@ -668,19 +633,17 @@ func generateExports(t *testing.T, suite CipherSuite, ctxS *SenderContext, ctxR 
 
 func generateTestVector(t *testing.T, setup setupMode, kem_id KEMID, kdf_id KDFID, aead_id AEADID) testVector {
 	suite, err := AssembleCipherSuite(kem_id, kdf_id, aead_id)
-	if err != nil {
-		t.Fatalf("[%x, %x, %x] Error looking up ciphersuite: %s", kem_id, kdf_id, aead_id, err)
-	}
+	require.Nil(t, err)
 
-	skR, pkR, ikmR := mustGenerateKeyPair(t, suite)
-	skE, pkE, ikmE := mustGenerateKeyPair(t, suite)
+	skR, pkR, ikmR := mustGenerateKeyPair(suite)
+	skE, pkE, ikmE := mustGenerateKeyPair(suite)
 
 	// The sender key share is only required for Auth mode variants.
 	var pkS KEMPublicKey
 	var skS KEMPrivateKey
 	var ikmS []byte
 	if setup.Mode == modeAuth || setup.Mode == modeAuthPSK {
-		skS, pkS, ikmS = mustGenerateKeyPair(t, suite)
+		skS, pkS, ikmS = mustGenerateKeyPair(suite)
 	}
 
 	// A PSK is only required for PSK mode variants.
@@ -694,19 +657,19 @@ func generateTestVector(t *testing.T, setup setupMode, kem_id KEMID, kdf_id KDFI
 	suite.KEM.setEphemeralKeyPair(skE)
 
 	enc, ctxS, err := setup.I(suite, pkR, info, skS, psk, psk_id)
-	assertNotError(t, suite, "Error in SetupPSKS", err)
+	require.Nil(t, err)
 
 	ctxR, err := setup.R(suite, skR, enc, info, pkS, psk, psk_id)
-	assertNotError(t, suite, "Error in SetupPSKR", err)
+	require.Nil(t, err)
 
 	encryptionVectors := []encryptionTestVector{}
 	if aead_id != AEAD_EXPORT_ONLY {
 		encryptionVectors, err = generateEncryptions(t, suite, ctxS, ctxR)
-		assertNotError(t, suite, "Error in generateEncryptions", err)
+		require.Nil(t, err)
 	}
 
 	exportVectors, err := generateExports(t, suite, ctxS, ctxR)
-	assertNotError(t, suite, "Error in generateExports", err)
+	require.Nil(t, err)
 
 	vector := testVector{
 		t:                  t,
@@ -760,9 +723,7 @@ func TestVectorGenerate(t *testing.T) {
 
 	// Encode the test vectors
 	encoded, err := json.Marshal(vectors)
-	if err != nil {
-		t.Fatalf("Error producing test vectors: %v", err)
-	}
+	require.Nil(t, err)
 
 	// Verify that we process them correctly
 	verifyTestVectors(t, encoded, false)
@@ -771,9 +732,7 @@ func TestVectorGenerate(t *testing.T) {
 	var outputFile string
 	if outputFile = os.Getenv(outputTestVectorEnvironmentKey); len(outputFile) > 0 {
 		err = ioutil.WriteFile(outputFile, encoded, 0644)
-		if err != nil {
-			t.Fatalf("Error writing test vectors: %v", err)
-		}
+		require.Nil(t, err)
 	}
 }
 
@@ -784,9 +743,7 @@ func TestVectorVerify(t *testing.T) {
 	}
 
 	encoded, err := ioutil.ReadFile(inputFile)
-	if err != nil {
-		t.Fatalf("Failed reading test vectors: %v", err)
-	}
+	require.Nil(t, err)
 
 	verifyTestVectors(t, encoded, true)
 }
