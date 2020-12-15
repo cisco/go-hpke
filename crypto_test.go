@@ -73,8 +73,8 @@ func TestDHSchemes(t *testing.T) {
 			t.Fatalf("[%d] Error generating DH key pair: %v", i, err)
 		}
 
-		enc := s.Serialize(pkA)
-		_, err = s.Deserialize(enc)
+		enc := s.SerializePublicKey(pkA)
+		_, err = s.DeserializePublicKey(enc)
 		if err != nil {
 			t.Fatalf("[%d] Error parsing DH public key: %v", i, err)
 		}
@@ -93,8 +93,8 @@ func TestDHSchemes(t *testing.T) {
 			t.Fatalf("[%d] Asymmetric DH results [%x] != [%x]", i, sharedSecretAB, sharedSecretBA)
 		}
 
-		if len(s.Serialize(pkA)) != len(s.Serialize(pkB)) {
-			t.Fatalf("[%d] Non-constant public key size [%x] != [%x]", i, len(s.Serialize(pkA)), len(s.Serialize(pkB)))
+		if len(s.SerializePublicKey(pkA)) != len(s.SerializePublicKey(pkB)) {
+			t.Fatalf("[%d] Non-constant public key size [%x] != [%x]", i, len(s.SerializePublicKey(pkA)), len(s.SerializePublicKey(pkB)))
 		}
 	}
 }

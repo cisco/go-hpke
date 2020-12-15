@@ -29,7 +29,6 @@ const (
 	outputTestVectorEnvironmentKey = "HPKE_TEST_VECTORS_OUT"
 	inputTestVectorEnvironmentKey  = "HPKE_TEST_VECTORS_IN"
 	testVectorEncryptionCount      = 10
-	testVectorExportCount          = 5
 	testVectorExportLength         = 32
 )
 
@@ -58,7 +57,7 @@ func mustHex(d []byte) string {
 
 func mustDeserializePriv(t *testing.T, suite CipherSuite, h string, required bool) KEMPrivateKey {
 	skm := mustUnhex(t, h)
-	sk, err := suite.KEM.DeserializePrivate(skm)
+	sk, err := suite.KEM.DeserializePrivateKey(skm)
 	if required {
 		fatalOnError(t, err, "DeserializePrivate failed")
 	}
@@ -66,20 +65,20 @@ func mustDeserializePriv(t *testing.T, suite CipherSuite, h string, required boo
 }
 
 func mustSerializePriv(suite CipherSuite, priv KEMPrivateKey) string {
-	return mustHex(suite.KEM.SerializePrivate(priv))
+	return mustHex(suite.KEM.SerializePrivateKey(priv))
 }
 
 func mustDeserializePub(t *testing.T, suite CipherSuite, h string, required bool) KEMPublicKey {
 	pkm := mustUnhex(t, h)
-	pk, err := suite.KEM.Deserialize(pkm)
+	pk, err := suite.KEM.DeserializePublicKey(pkm)
 	if required {
-		fatalOnError(t, err, "Deserialize failed")
+		fatalOnError(t, err, "DeserializePublicKey failed")
 	}
 	return pk
 }
 
 func mustSerializePub(suite CipherSuite, pub KEMPublicKey) string {
-	return mustHex(suite.KEM.Serialize(pub))
+	return mustHex(suite.KEM.SerializePublicKey(pub))
 }
 
 func mustGenerateKeyPair(t *testing.T, suite CipherSuite) (KEMPrivateKey, KEMPublicKey, []byte) {
@@ -167,9 +166,9 @@ func (etv *encryptionTestVector) UnmarshalJSON(data []byte) error {
 ///////
 // Exporter test vector structures
 type rawExporterTestVector struct {
-	ExportContext string `json:"exportContext"`
-	ExportLength  int    `json:"exportLength"`
-	ExportValue   string `json:"exportValue"`
+	ExportContext string `json:"exporter_context"`
+	ExportLength  int    `json:"L"`
+	ExportValue   string `json:"exported_value"`
 }
 
 type exporterTestVector struct {
@@ -383,28 +382,28 @@ func (tva *testVectorArray) UnmarshalJSON(data []byte) error {
 type setupMode struct {
 	Mode Mode
 	OK   func(suite CipherSuite) bool
-	I    func(suite CipherSuite, pkR KEMPublicKey, info []byte, skS KEMPrivateKey, psk, psk_id []byte) ([]byte, *EncryptContext, error)
-	R    func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkS KEMPublicKey, psk, psk_id []byte) (*DecryptContext, error)
+	I    func(suite CipherSuite, pkR KEMPublicKey, info []byte, skS KEMPrivateKey, psk, psk_id []byte) ([]byte, *SenderContext, error)
+	R    func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkS KEMPublicKey, psk, psk_id []byte) (*ReceiverContext, error)
 }
 
 var setupModes = map[Mode]setupMode{
 	modeBase: {
 		Mode: modeBase,
 		OK:   func(suite CipherSuite) bool { return true },
-		I: func(suite CipherSuite, pkR KEMPublicKey, info []byte, skS KEMPrivateKey, psk, psk_id []byte) ([]byte, *EncryptContext, error) {
+		I: func(suite CipherSuite, pkR KEMPublicKey, info []byte, skS KEMPrivateKey, psk, psk_id []byte) ([]byte, *SenderContext, error) {
 			return SetupBaseS(suite, rand.Reader, pkR, info)
 		},
-		R: func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkS KEMPublicKey, psk, psk_id []byte) (*DecryptContext, error) {
+		R: func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkS KEMPublicKey, psk, psk_id []byte) (*ReceiverContext, error) {
 			return SetupBaseR(suite, skR, enc, info)
 		},
 	},
 	modePSK: {
 		Mode: modePSK,
 		OK:   func(suite CipherSuite) bool { return true },
-		I: func(suite CipherSuite, pkR KEMPublicKey, info []byte, skS KEMPrivateKey, psk, psk_id []byte) ([]byte, *EncryptContext, error) {
+		I: func(suite CipherSuite, pkR KEMPublicKey, info []byte, skS KEMPrivateKey, psk, psk_id []byte) ([]byte, *SenderContext, error) {
 			return SetupPSKS(suite, rand.Reader, pkR, psk, psk_id, info)
 		},
-		R: func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkS KEMPublicKey, psk, psk_id []byte) (*DecryptContext, error) {
+		R: func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkS KEMPublicKey, psk, psk_id []byte) (*ReceiverContext, error) {
 			return SetupPSKR(suite, skR, enc, psk, psk_id, info)
 		},
 	},
@@ -414,10 +413,10 @@ var setupModes = map[Mode]setupMode{
 			_, ok := suite.KEM.(AuthKEMScheme)
 			return ok
 		},
-		I: func(suite CipherSuite, pkR KEMPublicKey, info []byte, skS KEMPrivateKey, psk, psk_id []byte) ([]byte, *EncryptContext, error) {
+		I: func(suite CipherSuite, pkR KEMPublicKey, info []byte, skS KEMPrivateKey, psk, psk_id []byte) ([]byte, *SenderContext, error) {
 			return SetupAuthS(suite, rand.Reader, pkR, skS, info)
 		},
-		R: func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkS KEMPublicKey, psk, psk_id []byte) (*DecryptContext, error) {
+		R: func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkS KEMPublicKey, psk, psk_id []byte) (*ReceiverContext, error) {
 			return SetupAuthR(suite, skR, pkS, enc, info)
 		},
 	},
@@ -427,10 +426,10 @@ var setupModes = map[Mode]setupMode{
 			_, ok := suite.KEM.(AuthKEMScheme)
 			return ok
 		},
-		I: func(suite CipherSuite, pkR KEMPublicKey, info []byte, skS KEMPrivateKey, psk, psk_id []byte) ([]byte, *EncryptContext, error) {
+		I: func(suite CipherSuite, pkR KEMPublicKey, info []byte, skS KEMPrivateKey, psk, psk_id []byte) ([]byte, *SenderContext, error) {
 			return SetupAuthPSKS(suite, rand.Reader, pkR, skS, psk, psk_id, info)
 		},
-		R: func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkS KEMPublicKey, psk, psk_id []byte) (*DecryptContext, error) {
+		R: func(suite CipherSuite, skR KEMPrivateKey, enc, info []byte, pkS KEMPublicKey, psk, psk_id []byte) (*ReceiverContext, error) {
 			return SetupAuthPSKR(suite, skR, pkS, enc, psk, psk_id, info)
 		},
 	},
@@ -459,7 +458,7 @@ func (rtt roundTripTest) Test(t *testing.T) {
 	skS, pkS, _ := mustGenerateKeyPair(t, suite)
 	skR, pkR, _ := mustGenerateKeyPair(t, suite)
 
-	enc, ctxI, err := rtt.setup.I(suite, pkR, info, skS, fixedPSK, fixedPSKID)
+	enc, ctxS, err := rtt.setup.I(suite, pkR, info, skS, fixedPSK, fixedPSKID)
 	assertNotError(t, suite, "Error in SetupI", err)
 
 	ctxR, err := rtt.setup.R(suite, skR, enc, info, pkS, fixedPSK, fixedPSKID)
@@ -467,29 +466,29 @@ func (rtt roundTripTest) Test(t *testing.T) {
 
 	// Verify encryption functionality
 	for range make([]struct{}, rtts) {
-		encrypted := ctxI.Seal(aad, original)
+		encrypted := ctxS.Seal(aad, original)
 		decrypted, err := ctxR.Open(aad, encrypted)
 		assertNotError(t, suite, "Error in Open", err)
 		assertBytesEqual(t, suite, "Incorrect decryption", decrypted, original)
 	}
 
 	// Verify exporter functionality
-	exportedI := ctxI.Export(exportContext, exportLength)
+	exportedI := ctxS.Export(exportContext, exportLength)
 	exportedR := ctxR.Export(exportContext, exportLength)
 	assertBytesEqual(t, suite, "Incorrect exported secret", exportedI, exportedR)
 
 	// Verify encryption context serialization functionality
-	opaqueI, err := ctxI.Marshal()
+	opaqueI, err := ctxS.Marshal()
 	if err != nil {
 		t.Fatalf("[%04x, %04x, %04x] Error serializing encrypt context: %v", rtt.kem_id, rtt.kdf_id, rtt.aead_id, err)
 	}
 
-	unmarshaledI, err := UnmarshalEncryptContext(opaqueI)
+	unmarshaledI, err := UnmarshalSenderContext(opaqueI)
 	if err != nil {
 		t.Fatalf("[%04x, %04x, %04x] Error serializing encrypt context: %v", rtt.kem_id, rtt.kdf_id, rtt.aead_id, err)
 	}
 
-	assertCipherContextEqual(t, suite, "Encrypt context serialization mismatch", ctxI.context, unmarshaledI.context)
+	assertCipherContextEqual(t, suite, "Encrypt context serialization mismatch", ctxS.context, unmarshaledI.context)
 
 	// Verify decryption context serialization functionality
 	opaqueR, err := ctxR.Marshal()
@@ -497,7 +496,7 @@ func (rtt roundTripTest) Test(t *testing.T) {
 		t.Fatalf("[%04x, %04x, %04x] Error serializing decrypt context: %v", rtt.kem_id, rtt.kdf_id, rtt.aead_id, err)
 	}
 
-	unmarshaledR, err := UnmarshalDecryptContext(opaqueR)
+	unmarshaledR, err := UnmarshalReceiverContext(opaqueR)
 	if err != nil {
 		t.Fatalf("[%04x, %04x, %04x] Error serializing decrypt context: %v", rtt.kem_id, rtt.kdf_id, rtt.aead_id, err)
 	}
@@ -526,7 +525,7 @@ func TestModes(t *testing.T) {
 ///////
 // Generation and processing of test vectors
 
-func verifyEncryptions(tv testVector, enc *EncryptContext, dec *DecryptContext) {
+func verifyEncryptions(tv testVector, enc *SenderContext, dec *ReceiverContext) {
 	for _, data := range tv.encryptions {
 		encrypted := enc.Seal(data.aad, data.plaintext)
 		decrypted, err := dec.Open(data.aad, encrypted)
@@ -583,17 +582,17 @@ func verifyTestVector(tv testVector) {
 		verifyPrivateKeysEqual(tv, tv.skS, skS)
 	}
 
-	enc, ctxI, err := setup.I(tv.suite, pkR, tv.info, skS, tv.psk, tv.psk_id)
+	enc, ctxS, err := setup.I(tv.suite, pkR, tv.info, skS, tv.psk, tv.psk_id)
 	assertNotError(tv.t, tv.suite, "Error in SetupI", err)
 	assertBytesEqual(tv.t, tv.suite, "Encapsulated key mismatch", enc, tv.enc)
 
 	ctxR, err := setup.R(tv.suite, skR, tv.enc, tv.info, pkS, tv.psk, tv.psk_id)
 	assertNotError(tv.t, tv.suite, "Error in SetupR", err)
 
-	verifyParameters(tv, ctxI.context)
+	verifyParameters(tv, ctxS.context)
 	verifyParameters(tv, ctxR.context)
 
-	verifyEncryptions(tv, ctxI, ctxR)
+	verifyEncryptions(tv, ctxS, ctxR)
 }
 
 func vectorTest(vector testVector) func(t *testing.T) {
@@ -620,11 +619,11 @@ func verifyTestVectors(t *testing.T, vectorString []byte, subtest bool) {
 	}
 }
 
-func generateEncryptions(t *testing.T, suite CipherSuite, ctxI *EncryptContext, ctxR *DecryptContext) ([]encryptionTestVector, error) {
+func generateEncryptions(t *testing.T, suite CipherSuite, ctxS *SenderContext, ctxR *ReceiverContext) ([]encryptionTestVector, error) {
 	vectors := make([]encryptionTestVector, testVectorEncryptionCount)
 	for i := 0; i < len(vectors); i++ {
 		aad := []byte(fmt.Sprintf("Count-%d", i))
-		encrypted := ctxI.Seal(aad, original)
+		encrypted := ctxS.Seal(aad, original)
 		decrypted, err := ctxR.Open(aad, encrypted)
 		assertNotError(t, suite, "Decryption failure", err)
 		assertBytesEqual(t, suite, "Incorrect decryption", original, decrypted)
@@ -632,7 +631,7 @@ func generateEncryptions(t *testing.T, suite CipherSuite, ctxI *EncryptContext, 
 		vectors[i] = encryptionTestVector{
 			plaintext:  original,
 			aad:        aad,
-			nonce:      ctxI.nonces[i],
+			nonce:      ctxS.nonces[i],
 			ciphertext: encrypted,
 		}
 	}
@@ -640,15 +639,19 @@ func generateEncryptions(t *testing.T, suite CipherSuite, ctxI *EncryptContext, 
 	return vectors, nil
 }
 
-func generateExports(t *testing.T, suite CipherSuite, ctxI *EncryptContext, ctxR *DecryptContext) ([]exporterTestVector, error) {
-	vectors := make([]exporterTestVector, testVectorExportCount)
+func generateExports(t *testing.T, suite CipherSuite, ctxS *SenderContext, ctxR *ReceiverContext) ([]exporterTestVector, error) {
+	exportContexts := [][]byte{
+		[]byte(""),
+		[]byte{0x00},
+		[]byte("TestContext"),
+	}
+	vectors := make([]exporterTestVector, len(exportContexts))
 	for i := 0; i < len(vectors); i++ {
-		context := []byte(fmt.Sprintf("Context-%d", i))
-		exportI := ctxI.Export(context, testVectorExportLength)
-		exportR := ctxR.Export(context, testVectorExportLength)
+		exportI := ctxS.Export(exportContexts[i], testVectorExportLength)
+		exportR := ctxR.Export(exportContexts[i], testVectorExportLength)
 		assertBytesEqual(t, suite, "Incorrect export", exportI, exportR)
 		vectors[i] = exporterTestVector{
-			exportContext: context,
+			exportContext: exportContexts[i],
 			exportLength:  testVectorExportLength,
 			exportValue:   exportI,
 		}
@@ -684,16 +687,19 @@ func generateTestVector(t *testing.T, setup setupMode, kem_id KEMID, kdf_id KDFI
 
 	suite.KEM.setEphemeralKeyPair(skE)
 
-	enc, ctxI, err := setup.I(suite, pkR, info, skS, psk, psk_id)
+	enc, ctxS, err := setup.I(suite, pkR, info, skS, psk, psk_id)
 	assertNotError(t, suite, "Error in SetupPSKS", err)
 
 	ctxR, err := setup.R(suite, skR, enc, info, pkS, psk, psk_id)
 	assertNotError(t, suite, "Error in SetupPSKR", err)
 
-	encryptionVectors, err := generateEncryptions(t, suite, ctxI, ctxR)
-	assertNotError(t, suite, "Error in generateEncryptions", err)
+	encryptionVectors := []encryptionTestVector{}
+	if aead_id != AEAD_EXPORT_ONLY {
+		encryptionVectors, err = generateEncryptions(t, suite, ctxS, ctxR)
+		assertNotError(t, suite, "Error in generateEncryptions", err)
+	}
 
-	exportVectors, err := generateExports(t, suite, ctxI, ctxR)
+	exportVectors, err := generateExports(t, suite, ctxS, ctxR)
 	assertNotError(t, suite, "Error in generateExports", err)
 
 	vector := testVector{
@@ -715,13 +721,13 @@ func generateTestVector(t *testing.T, setup setupMode, kem_id KEMID, kdf_id KDFI
 		ikmE:               ikmE,
 		psk:                psk,
 		psk_id:             psk_id,
-		enc:                ctxI.setupParams.enc,
-		sharedSecret:       ctxI.setupParams.sharedSecret,
-		keyScheduleContext: ctxI.contextParams.keyScheduleContext,
-		secret:             ctxI.contextParams.secret,
-		key:                ctxI.Key,
-		baseNonce:          ctxI.BaseNonce,
-		exporterSecret:     ctxI.ExporterSecret,
+		enc:                ctxS.setupParams.enc,
+		sharedSecret:       ctxS.setupParams.sharedSecret,
+		keyScheduleContext: ctxS.contextParams.keyScheduleContext,
+		secret:             ctxS.contextParams.secret,
+		key:                ctxS.Key,
+		baseNonce:          ctxS.BaseNonce,
+		exporterSecret:     ctxS.ExporterSecret,
 		encryptions:        encryptionVectors,
 		exports:            exportVectors,
 	}
@@ -733,7 +739,7 @@ func TestVectorGenerate(t *testing.T) {
 	// We only generate test vectors for select ciphersuites
 	supportedKEMs := []KEMID{DHKEM_X25519, DHKEM_X448, DHKEM_P256, DHKEM_P521}
 	supportedKDFs := []KDFID{KDF_HKDF_SHA256, KDF_HKDF_SHA512}
-	supportedAEADs := []AEADID{AEAD_AESGCM128, AEAD_AESGCM256, AEAD_CHACHA20POLY1305}
+	supportedAEADs := []AEADID{AEAD_AESGCM128, AEAD_AESGCM256, AEAD_CHACHA20POLY1305, AEAD_EXPORT_ONLY}
 
 	vectors := make([]testVector, 0)
 	for _, kem_id := range supportedKEMs {
