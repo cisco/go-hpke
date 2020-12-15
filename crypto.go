@@ -806,19 +806,19 @@ type exportOnlyScheme struct {
 }
 
 func (s exportOnlyScheme) ID() AEADID {
-	return AEAD_CHACHA20POLY1305
+	return AEAD_EXPORT_ONLY
 }
 
 func (s exportOnlyScheme) New(key []byte) (cipher.AEAD, error) {
-	return chacha20poly1305.New(key)
+	panic("Not supported")
 }
 
 func (s exportOnlyScheme) KeySize() int {
-	return chacha20poly1305.KeySize
+	panic("Not supported")
 }
 
 func (s exportOnlyScheme) NonceSize() int {
-	return chacha20poly1305.NonceSize
+	panic("Not supported")
 }
 
 ///////
