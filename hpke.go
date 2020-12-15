@@ -265,15 +265,17 @@ func unmarshalContext(role contextRole, opaque []byte) (context, error) {
 		return context{}, err
 	}
 
-	// Construct AEAD and validate the key length.
-	ctx.aead, err = ctx.suite.AEAD.New(ctx.Key)
-	if err != nil {
-		return context{}, err
-	}
+	// Construct AEAD and validate the key length, if applcable.
+	if ctx.AEADID != AEAD_EXPORT_ONLY {
+		ctx.aead, err = ctx.suite.AEAD.New(ctx.Key)
+		if err != nil {
+			return context{}, err
+		}
 
-	// Validate the nonce length.
-	if len(ctx.BaseNonce) != ctx.aead.NonceSize() {
-		return context{}, fmt.Errorf("base nonce length: got %d; want %d", len(ctx.BaseNonce), ctx.aead.NonceSize())
+		// Validate the nonce length.
+		if len(ctx.BaseNonce) != ctx.aead.NonceSize() {
+			return context{}, fmt.Errorf("base nonce length: got %d; want %d", len(ctx.BaseNonce), ctx.aead.NonceSize())
+		}
 	}
 
 	// Validate the exporter secret length.

@@ -118,17 +118,19 @@ func assertCipherContextEqual(t *testing.T, suite CipherSuite, msg string, lhs, 
 	assertBytesEqual(t, suite, fmt.Sprintf("%s: %s", msg, "base_nonce"), lhs.BaseNonce, rhs.BaseNonce)
 	assert(t, suite, fmt.Sprintf("%s: %s", msg, "sequence number"), lhs.Seq == rhs.Seq)
 
-	// Verify that the internal AEAD object uses the same algorithm and is keyed
-	// with the same key.
-	var got, want []byte
-	lhs.aead.Seal(got, lhs.BaseNonce, nil, nil)
-	rhs.aead.Seal(want, rhs.BaseNonce, nil, nil)
-	assertBytesEqual(t, suite, fmt.Sprintf("%s: %s", msg, "internal AEAD representation"), got, want)
-
 	// Verify that the internal representation of the cipher suite matches.
 	assert(t, suite, fmt.Sprintf("%s: %s", msg, "KEM scheme representation"), lhs.suite.KEM.ID() == rhs.suite.KEM.ID())
 	assert(t, suite, fmt.Sprintf("%s: %s", msg, "KDF scheme representation"), lhs.suite.KDF.ID() == rhs.suite.KDF.ID())
 	assert(t, suite, fmt.Sprintf("%s: %s", msg, "AEAD scheme representation"), lhs.suite.AEAD.ID() == rhs.suite.AEAD.ID())
+
+	// Verify that the internal AEAD object uses the same algorithm and is keyed
+	// with the same key.
+	if lhs.AEADID != AEAD_EXPORT_ONLY {
+		var got, want []byte
+		lhs.aead.Seal(got, lhs.BaseNonce, nil, nil)
+		rhs.aead.Seal(want, rhs.BaseNonce, nil, nil)
+		assertBytesEqual(t, suite, fmt.Sprintf("%s: %s", msg, "internal AEAD representation"), got, want)
+	}
 }
 
 ///////
@@ -464,12 +466,14 @@ func (rtt roundTripTest) Test(t *testing.T) {
 	ctxR, err := rtt.setup.R(suite, skR, enc, info, pkS, fixedPSK, fixedPSKID)
 	assertNotError(t, suite, "Error in SetupR", err)
 
-	// Verify encryption functionality
-	for range make([]struct{}, rtts) {
-		encrypted := ctxS.Seal(aad, original)
-		decrypted, err := ctxR.Open(aad, encrypted)
-		assertNotError(t, suite, "Error in Open", err)
-		assertBytesEqual(t, suite, "Incorrect decryption", decrypted, original)
+	// Verify encryption functionality, if applicable
+	if rtt.aead_id != AEAD_EXPORT_ONLY {
+		for range make([]struct{}, rtts) {
+			encrypted := ctxS.Seal(aad, original)
+			decrypted, err := ctxR.Open(aad, encrypted)
+			assertNotError(t, suite, "Error in Open", err)
+			assertBytesEqual(t, suite, "Incorrect decryption", decrypted, original)
+		}
 	}
 
 	// Verify exporter functionality
