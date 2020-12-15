@@ -23,7 +23,7 @@ ordered_export_keys = [
 ]
 
 encryption_count_keys = [
-    0, 1, 2, 4,
+    0, 1, 2, 4, 255, 256,
 ]
 
 def entry_kem(entry):
@@ -54,22 +54,39 @@ modeBase = 0x00
 modePSK = 0x01
 modeAuth = 0x02
 modeAuthPSK = 0x03
-modeMap = {modeBase: "Base", modePSK: "PSK", modeAuth: "Auth", modeAuthPSK: "AuthPSK"}
+modeMap = {
+    modeBase: "Base", 
+    modePSK: "PSK", 
+    modeAuth: "Auth", 
+    modeAuthPSK: "AuthPSK"
+}
 
 kem_idP256 = 0x0010
 kem_idP521 = 0x0012
 kem_idX25519 = 0x0020
-kemMap = {kem_idX25519: "DHKEM(X25519, HKDF-SHA256)", kem_idP256: "DHKEM(P-256, HKDF-SHA256)", kem_idP521: "DHKEM(P-521, HKDF-SHA512)"}
+kemMap = {
+    kem_idX25519: "DHKEM(X25519, HKDF-SHA256)", 
+    kem_idP256: "DHKEM(P-256, HKDF-SHA256)", 
+    kem_idP521: "DHKEM(P-521, HKDF-SHA512)"
+}
 
 kdf_idSHA256 = 0x0001
 kdf_idSHA512 = 0x0003
-kdfMap = {kdf_idSHA256: "HKDF-SHA256", kdf_idSHA512: "HKDF-SHA512"}
+kdfMap = {
+    kdf_idSHA256: "HKDF-SHA256", 
+    kdf_idSHA512: "HKDF-SHA512"
+}
 
 aead_idAES128GCM = 0x0001
 aead_idAES256GCM = 0x0002
 aead_idChaCha20Poly1305 = 0x0003
 aead_idExportOnly = 0xFFFF
-aeadMap = {aead_idAES128GCM: "AES-128-GCM", aead_idAES256GCM: "AES-256-GCM", aead_idChaCha20Poly1305: "ChaCha20Poly1305", aead_idExportOnly: "Export-Only AEAD"}
+aeadMap = {
+    aead_idAES128GCM: "AES-128-GCM", 
+    aead_idAES256GCM: "AES-256-GCM", 
+    aead_idChaCha20Poly1305: "ChaCha20Poly1305", 
+    aead_idExportOnly: "Export-Only AEAD"
+}
 
 class CipherSuite(object):
     def __init__(self, kem_id, kdf_id, aead_id):

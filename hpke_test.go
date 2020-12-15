@@ -28,7 +28,7 @@ var (
 const (
 	outputTestVectorEnvironmentKey = "HPKE_TEST_VECTORS_OUT"
 	inputTestVectorEnvironmentKey  = "HPKE_TEST_VECTORS_IN"
-	testVectorEncryptionCount      = 10
+	testVectorEncryptionCount      = 257
 	testVectorExportLength         = 32
 )
 
@@ -123,14 +123,16 @@ func assertCipherContextEqual(t *testing.T, suite CipherSuite, msg string, lhs, 
 	assert(t, suite, fmt.Sprintf("%s: %s", msg, "KDF scheme representation"), lhs.suite.KDF.ID() == rhs.suite.KDF.ID())
 	assert(t, suite, fmt.Sprintf("%s: %s", msg, "AEAD scheme representation"), lhs.suite.AEAD.ID() == rhs.suite.AEAD.ID())
 
+	if lhs.AEADID == AEAD_EXPORT_ONLY {
+		return
+	}
+
 	// Verify that the internal AEAD object uses the same algorithm and is keyed
 	// with the same key.
-	if lhs.AEADID != AEAD_EXPORT_ONLY {
-		var got, want []byte
-		lhs.aead.Seal(got, lhs.BaseNonce, nil, nil)
-		rhs.aead.Seal(want, rhs.BaseNonce, nil, nil)
-		assertBytesEqual(t, suite, fmt.Sprintf("%s: %s", msg, "internal AEAD representation"), got, want)
-	}
+	var got, want []byte
+	lhs.aead.Seal(got, lhs.BaseNonce, nil, nil)
+	rhs.aead.Seal(want, rhs.BaseNonce, nil, nil)
+	assertBytesEqual(t, suite, fmt.Sprintf("%s: %s", msg, "internal AEAD representation"), got, want)
 }
 
 ///////

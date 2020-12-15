@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/cloudflare/circl/dh/sidh"
+
+	"github.com/stretchr/testify/require"
 )
 
 func randomBytes(size int) []byte {
@@ -141,4 +143,20 @@ func TestAEADSchemes(t *testing.T) {
 			t.Fatalf("[%d] AAD not included in ciphertext", i)
 		}
 	}
+}
+
+func TestExportOnlyAEADScheme(t *testing.T) {
+	scheme, ok := aeads[AEAD_EXPORT_ONLY]
+
+	require.True(t, ok, "Export-only AEAD lookup failed")
+	require.Equal(t, scheme.ID(), AEAD_EXPORT_ONLY, "Export-only AEAD ID mismatch")
+	require.Panics(t, func() {
+		_, _ = scheme.New([]byte{0x00})
+	}, "New() did not panic")
+	require.Panics(t, func() {
+		_ = scheme.KeySize()
+	}, "KeySize() did not panic")
+	require.Panics(t, func() {
+		_ = scheme.NonceSize()
+	}, "NonceSize() did not panic")
 }
