@@ -294,7 +294,9 @@ func (s ecdhScheme) SerializePublicKey(pk KEMPublicKey) []byte {
 		return nil
 	}
 	raw := pk.(*ecdhPublicKey)
-	return elliptic.Marshal(raw.curve, raw.x, raw.y)
+
+	// Drop the sign-bit for the compact representation
+	return elliptic.MarshalCompressed(raw.curve, raw.x, raw.y)[1:]
 }
 
 func (s ecdhScheme) SerializePrivateKey(sk KEMPrivateKey) []byte {
@@ -309,8 +311,9 @@ func (s ecdhScheme) SerializePrivateKey(sk KEMPrivateKey) []byte {
 }
 
 func (s ecdhScheme) DeserializePublicKey(enc []byte) (KEMPublicKey, error) {
-	x, y := elliptic.Unmarshal(s.curve, enc)
-	if x == nil {
+	compressed := append([]byte{0x02}, enc...)
+	x, y := elliptic.UnmarshalCompressed(s.curve, compressed)
+	if y == nil {
 		return nil, fmt.Errorf("Error deserializing public key")
 	}
 

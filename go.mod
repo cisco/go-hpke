@@ -1,6 +1,6 @@
 module github.com/cisco/go-hpke
 
-go 1.14
+go 1.15
 
 require (
 	git.schwanenlied.me/yawning/x448.git v0.0.0-20170617130356-01b048fb03d6
