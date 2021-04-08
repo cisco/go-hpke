@@ -598,6 +598,8 @@ func (s sikeScheme) internalKDF() KDFScheme {
 
 func (s sikeScheme) ID() KEMID {
 	switch s.field {
+	case sidh.Fp434:
+		return KEM_SIKE434
 	case sidh.Fp503:
 		return KEM_SIKE503
 	case sidh.Fp751:
@@ -670,6 +672,8 @@ func (s sikeScheme) DeserializePrivateKey(enc []byte) (KEMPrivateKey, error) {
 
 func (s sikeScheme) newKEM(rand io.Reader) (*sidh.KEM, error) {
 	switch s.field {
+	case sidh.Fp434:
+		return sidh.NewSike434(rand), nil
 	case sidh.Fp503:
 		return sidh.NewSike503(rand), nil
 	case sidh.Fp751:
@@ -913,6 +917,7 @@ const (
 	DHKEM_P521   KEMID = 0x0012
 	DHKEM_X25519 KEMID = 0x0020
 	DHKEM_X448   KEMID = 0x0021
+	KEM_SIKE434  KEMID = 0xFFFD
 	KEM_SIKE503  KEMID = 0xFFFE
 	KEM_SIKE751  KEMID = 0xFFFF
 )
@@ -922,6 +927,7 @@ var kems = map[KEMID]KEMScheme{
 	DHKEM_X448:   &dhkemScheme{group: x448Scheme{}},
 	DHKEM_P256:   &dhkemScheme{group: ecdhScheme{curve: elliptic.P256(), KDF: hkdfScheme{hash: crypto.SHA256}}},
 	DHKEM_P521:   &dhkemScheme{group: ecdhScheme{curve: elliptic.P521(), KDF: hkdfScheme{hash: crypto.SHA512}}},
+	KEM_SIKE434:  &sikeScheme{field: sidh.Fp434, KDF: hkdfScheme{hash: crypto.SHA512}},
 	KEM_SIKE503:  &sikeScheme{field: sidh.Fp503, KDF: hkdfScheme{hash: crypto.SHA512}},
 	KEM_SIKE751:  &sikeScheme{field: sidh.Fp751, KDF: hkdfScheme{hash: crypto.SHA512}},
 }
@@ -936,6 +942,8 @@ func newKEMScheme(kemID KEMID) (KEMScheme, bool) {
 		return &dhkemScheme{group: ecdhScheme{curve: elliptic.P256(), KDF: hkdfScheme{hash: crypto.SHA256}}}, true
 	case DHKEM_P521:
 		return &dhkemScheme{group: ecdhScheme{curve: elliptic.P521(), KDF: hkdfScheme{hash: crypto.SHA512}}}, true
+	case KEM_SIKE434:
+		return &sikeScheme{field: sidh.Fp434, KDF: hkdfScheme{hash: crypto.SHA512}}, true
 	case KEM_SIKE503:
 		return &sikeScheme{field: sidh.Fp503, KDF: hkdfScheme{hash: crypto.SHA512}}, true
 	case KEM_SIKE751:

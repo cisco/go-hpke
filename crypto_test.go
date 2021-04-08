@@ -24,6 +24,7 @@ func TestKEMSchemes(t *testing.T) {
 		&dhkemScheme{group: x448Scheme{}},
 		&dhkemScheme{group: ecdhScheme{curve: elliptic.P256(), KDF: hkdfScheme{hash: crypto.SHA256}}},
 		&dhkemScheme{group: ecdhScheme{curve: elliptic.P521(), KDF: hkdfScheme{hash: crypto.SHA256}}},
+		&sikeScheme{field: sidh.Fp434, KDF: hkdfScheme{hash: crypto.SHA512}},
 		&sikeScheme{field: sidh.Fp503, KDF: hkdfScheme{hash: crypto.SHA512}},
 		&sikeScheme{field: sidh.Fp751, KDF: hkdfScheme{hash: crypto.SHA512}},
 	}

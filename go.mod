@@ -5,7 +5,7 @@ go 1.14
 require (
 	git.schwanenlied.me/yawning/x448.git v0.0.0-20170617130356-01b048fb03d6
 	github.com/cisco/go-tls-syntax v0.0.0-20200617162716-46b0cfb76b9b
-	github.com/cloudflare/circl v1.0.0
-	github.com/stretchr/testify v1.6.1
-	golang.org/x/crypto v0.0.0-20200820211705-5c72a883971a
+	github.com/cloudflare/circl v1.0.1-0.20210315192536-3977848c88c6
+	github.com/stretchr/testify v1.7.0
+	golang.org/x/crypto v0.0.0-20201208171446-5f87f3452ae9
 )
