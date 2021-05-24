@@ -146,10 +146,10 @@ type encryptionTestVector struct {
 
 func (etv encryptionTestVector) MarshalJSON() ([]byte, error) {
 	return json.Marshal(map[string]string{
-		"plaintext":  mustHex(etv.plaintext),
-		"aad":        mustHex(etv.aad),
-		"nonce":      mustHex(etv.nonce),
-		"ciphertext": mustHex(etv.ciphertext),
+		"pt":    mustHex(etv.plaintext),
+		"aad":   mustHex(etv.aad),
+		"nonce": mustHex(etv.nonce),
+		"ct":    mustHex(etv.ciphertext),
 	})
 }
 
@@ -160,10 +160,10 @@ func (etv *encryptionTestVector) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	etv.plaintext = mustUnhex(nil, raw["plaintext"])
+	etv.plaintext = mustUnhex(nil, raw["pt"])
 	etv.aad = mustUnhex(nil, raw["aad"])
 	etv.nonce = mustUnhex(nil, raw["nonce"])
-	etv.ciphertext = mustUnhex(nil, raw["ciphertext"])
+	etv.ciphertext = mustUnhex(nil, raw["ct"])
 	return nil
 }
 
