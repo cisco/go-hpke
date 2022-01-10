@@ -114,7 +114,7 @@ testSuites = [
 ]
 
 def wrap_line(value):
-    return textwrap.fill(value, width=72)
+    return textwrap.fill(value, width=68)
 
 def format_encryption(entry, count):
     formatted = wrap_line("sequence number: %d" % count) + "\n"
