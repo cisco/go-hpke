@@ -1,7 +1,6 @@
 package hpke
 
 import (
-	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -9,6 +8,8 @@ import (
 	"io/ioutil"
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -36,12 +37,10 @@ const (
 // Infallible Serialize / Deserialize
 func fatalOnError(t *testing.T, err error, msg string) {
 	realMsg := fmt.Sprintf("%s: %v", msg, err)
-	if err != nil {
-		if t != nil {
-			t.Fatalf(realMsg)
-		} else {
-			panic(realMsg)
-		}
+	if t != nil {
+		require.Nil(t, err, realMsg)
+	} else if err != nil {
+		panic(realMsg)
 	}
 }
 
@@ -92,19 +91,21 @@ func mustGenerateKeyPair(t *testing.T, suite CipherSuite) (KEMPrivateKey, KEMPub
 ///////
 // Assertions
 func assert(t *testing.T, suite CipherSuite, msg string, test bool) {
-	if !test {
-		t.Fatalf("[%04x, %04x, %04x] %s", suite.KEM.ID(), suite.KDF.ID(), suite.AEAD.ID(), msg)
-	}
+	require.True(t, test, "[%04x, %04x, %04x] %s", suite.KEM.ID(), suite.KDF.ID(), suite.AEAD.ID(), msg)
 }
 
 func assertNotError(t *testing.T, suite CipherSuite, msg string, err error) {
-	realMsg := fmt.Sprintf("%s: %v", msg, err)
-	assert(t, suite, realMsg, err == nil)
+	require.Nil(t, err, "%s: %v", msg, err)
 }
 
 func assertBytesEqual(t *testing.T, suite CipherSuite, msg string, lhs, rhs []byte) {
-	realMsg := fmt.Sprintf("%s: [%x] != [%x]", msg, lhs, rhs)
-	assert(t, suite, realMsg, bytes.Equal(lhs, rhs))
+	// require.Equal treates a nil slice as different from a zero-length slice, so
+	// we handle this as a special case.
+	if len(lhs) == 0 && len(rhs) == 0 {
+		return
+	}
+
+	require.Equal(t, lhs, rhs, "%s: [%x] != [%x]", msg, lhs, rhs)
 }
 
 func assertCipherContextEqual(t *testing.T, suite CipherSuite, msg string, lhs, rhs context) {
@@ -451,9 +452,7 @@ type roundTripTest struct {
 
 func (rtt roundTripTest) Test(t *testing.T) {
 	suite, err := AssembleCipherSuite(rtt.kem_id, rtt.kdf_id, rtt.aead_id)
-	if err != nil {
-		t.Fatalf("[%04x, %04x, %04x] Error looking up ciphersuite: %v", rtt.kem_id, rtt.kdf_id, rtt.aead_id, err)
-	}
+	require.Nil(t, err, "[%04x, %04x, %04x] Error looking up ciphersuite: %v", rtt.kem_id, rtt.kdf_id, rtt.aead_id, err)
 
 	if !rtt.setup.OK(suite) {
 		return
@@ -485,28 +484,18 @@ func (rtt roundTripTest) Test(t *testing.T) {
 
 	// Verify encryption context serialization functionality
 	opaqueI, err := ctxS.Marshal()
-	if err != nil {
-		t.Fatalf("[%04x, %04x, %04x] Error serializing encrypt context: %v", rtt.kem_id, rtt.kdf_id, rtt.aead_id, err)
-	}
+	assertNotError(t, suite, "Error serializing encrypt context", err)
 
 	unmarshaledI, err := UnmarshalSenderContext(opaqueI)
-	if err != nil {
-		t.Fatalf("[%04x, %04x, %04x] Error serializing encrypt context: %v", rtt.kem_id, rtt.kdf_id, rtt.aead_id, err)
-	}
-
+	assertNotError(t, suite, "Error deserializing encrypt context", err)
 	assertCipherContextEqual(t, suite, "Encrypt context serialization mismatch", ctxS.context, unmarshaledI.context)
 
 	// Verify decryption context serialization functionality
 	opaqueR, err := ctxR.Marshal()
-	if err != nil {
-		t.Fatalf("[%04x, %04x, %04x] Error serializing decrypt context: %v", rtt.kem_id, rtt.kdf_id, rtt.aead_id, err)
-	}
+	assertNotError(t, suite, "Error serializing decrypt context", err)
 
 	unmarshaledR, err := UnmarshalReceiverContext(opaqueR)
-	if err != nil {
-		t.Fatalf("[%04x, %04x, %04x] Error serializing decrypt context: %v", rtt.kem_id, rtt.kdf_id, rtt.aead_id, err)
-	}
-
+	assertNotError(t, suite, "Error deserializing decrypt context", err)
 	assertCipherContextEqual(t, suite, "Decrypt context serialization mismatch", ctxR.context, unmarshaledR.context)
 
 	// Verify exporter functionality for a deserialized context
@@ -610,9 +599,7 @@ func vectorTest(vector testVector) func(t *testing.T) {
 func verifyTestVectors(t *testing.T, vectorString []byte, subtest bool) {
 	vectors := testVectorArray{t: t}
 	err := json.Unmarshal(vectorString, &vectors)
-	if err != nil {
-		t.Fatalf("Error decoding test vector string: %v", err)
-	}
+	require.Nil(t, err, "Error decoding test vector string: %v", err)
 
 	for _, tv := range vectors.vectors {
 		test := vectorTest(tv)
@@ -668,9 +655,7 @@ func generateExports(t *testing.T, suite CipherSuite, ctxS *SenderContext, ctxR 
 
 func generateTestVector(t *testing.T, setup setupMode, kem_id KEMID, kdf_id KDFID, aead_id AEADID) testVector {
 	suite, err := AssembleCipherSuite(kem_id, kdf_id, aead_id)
-	if err != nil {
-		t.Fatalf("[%x, %x, %x] Error looking up ciphersuite: %s", kem_id, kdf_id, aead_id, err)
-	}
+	require.Nil(t, err, "[%x, %x, %x] Error looking up ciphersuite: %s", kem_id, kdf_id, aead_id, err)
 
 	skR, pkR, ikmR := mustGenerateKeyPair(t, suite)
 	skE, pkE, ikmE := mustGenerateKeyPair(t, suite)
@@ -760,9 +745,7 @@ func TestVectorGenerate(t *testing.T) {
 
 	// Encode the test vectors
 	encoded, err := json.Marshal(vectors)
-	if err != nil {
-		t.Fatalf("Error producing test vectors: %v", err)
-	}
+	require.Nil(t, err, "Error producing test vectors: %v", err)
 
 	// Verify that we process them correctly
 	verifyTestVectors(t, encoded, false)
@@ -771,9 +754,7 @@ func TestVectorGenerate(t *testing.T) {
 	var outputFile string
 	if outputFile = os.Getenv(outputTestVectorEnvironmentKey); len(outputFile) > 0 {
 		err = ioutil.WriteFile(outputFile, encoded, 0644)
-		if err != nil {
-			t.Fatalf("Error writing test vectors: %v", err)
-		}
+		require.Nil(t, err, "Error writing test vectors: %v", err)
 	}
 }
 
@@ -784,9 +765,7 @@ func TestVectorVerify(t *testing.T) {
 	}
 
 	encoded, err := ioutil.ReadFile(inputFile)
-	if err != nil {
-		t.Fatalf("Failed reading test vectors: %v", err)
-	}
+	require.Nil(t, err, "Failed reading test vectors: %v", err)
 
 	verifyTestVectors(t, encoded, true)
 }
