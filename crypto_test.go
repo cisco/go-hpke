@@ -1,14 +1,12 @@
 package hpke
 
 import (
-	"bytes"
 	"crypto"
 	"crypto/elliptic"
 	"crypto/rand"
 	"testing"
 
 	"github.com/cloudflare/circl/dh/sidh"
-
 	"github.com/stretchr/testify/require"
 )
 
@@ -33,23 +31,15 @@ func TestKEMSchemes(t *testing.T) {
 		rand.Reader.Read(ikm)
 
 		skR, pkR, err := s.DeriveKeyPair(ikm)
-		if err != nil {
-			t.Fatalf("[%d] Error generating KEM key pair: %v", i, err)
-		}
+		require.Nil(t, err, "[%d] Error generating KEM key pair: %v", i, err)
 
 		sharedSecretI, enc, err := s.Encap(rand.Reader, pkR)
-		if err != nil {
-			t.Fatalf("[%d] Error in KEM encapsulation: %v", i, err)
-		}
+		require.Nil(t, err, "[%d] Error in KEM encapsulation: %v", i, err)
 
 		sharedSecretR, err := s.Decap(enc, skR)
-		if err != nil {
-			t.Fatalf("[%d] Error in KEM decapsulation: %v", i, err)
-		}
+		require.Nil(t, err, "[%d] Error in KEM decapsulation: %v", i, err)
 
-		if !bytes.Equal(sharedSecretI, sharedSecretR) {
-			t.Fatalf("[%d] Asymmetric KEM results [%x] != [%x]", i, sharedSecretI, sharedSecretR)
-		}
+		require.Equal(t, sharedSecretI, sharedSecretR, "[%d] Asymmetric KEM results [%x] != [%x]", i, sharedSecretI, sharedSecretR)
 	}
 }
 
@@ -65,39 +55,26 @@ func TestDHSchemes(t *testing.T) {
 		ikm := make([]byte, s.PrivateKeySize())
 		rand.Reader.Read(ikm)
 		skA, pkA, err := s.DeriveKeyPair(ikm)
-		if err != nil {
-			t.Fatalf("[%d] Error generating DH key pair: %v", i, err)
-		}
+		require.Nil(t, err, "[%d] Error generating DH key pair: %v", i, err)
 
 		rand.Reader.Read(ikm)
 		skB, pkB, err := s.DeriveKeyPair(ikm)
-		if err != nil {
-			t.Fatalf("[%d] Error generating DH key pair: %v", i, err)
-		}
+		require.Nil(t, err, "[%d] Error generating DH key pair: %v", i, err)
 
 		enc := s.SerializePublicKey(pkA)
 		_, err = s.DeserializePublicKey(enc)
-		if err != nil {
-			t.Fatalf("[%d] Error parsing DH public key: %v", i, err)
-		}
+		require.Nil(t, err, "[%d] Error parsing DH public key: %v", i, err)
 
 		sharedSecretAB, err := s.DH(skA, pkB)
-		if err != nil {
-			t.Fatalf("[%d] Error performing DH operation: %v", i, err)
-		}
+		require.Nil(t, err, "[%d] Error performing DH operation: %v", i, err)
 
 		sharedSecretBA, err := s.DH(skB, pkA)
-		if err != nil {
-			t.Fatalf("[%d] Error performing DH operation: %v", i, err)
-		}
+		require.Nil(t, err, "[%d] Error performing DH operation: %v", i, err)
+		require.Equal(t, sharedSecretAB, sharedSecretBA, "[%d] Asymmetric DH results [%x] != [%x]", i, sharedSecretAB, sharedSecretBA)
 
-		if !bytes.Equal(sharedSecretAB, sharedSecretBA) {
-			t.Fatalf("[%d] Asymmetric DH results [%x] != [%x]", i, sharedSecretAB, sharedSecretBA)
-		}
-
-		if len(s.SerializePublicKey(pkA)) != len(s.SerializePublicKey(pkB)) {
-			t.Fatalf("[%d] Non-constant public key size [%x] != [%x]", i, len(s.SerializePublicKey(pkA)), len(s.SerializePublicKey(pkB)))
-		}
+		pkAn := len(s.SerializePublicKey(pkA))
+		pkBn := len(s.SerializePublicKey(pkB))
+		require.Equal(t, pkAn, pkBn, "[%d] Non-constant public key size [%x] != [%x]", i, pkAn, pkBn)
 	}
 }
 
@@ -115,33 +92,19 @@ func TestAEADSchemes(t *testing.T) {
 		aad := randomBytes(1024)
 
 		aead, err := s.New(key)
-		if err != nil {
-			t.Fatalf("[%d] Error instantiating AEAD: %v", i, err)
-		}
+		require.Nil(t, err, "[%d] Error instantiating AEAD: %v", i, err)
 
 		ctWithAAD := aead.Seal(nil, nonce, pt, aad)
 		ptWithAAD, err := aead.Open(nil, nonce, ctWithAAD, aad)
-		if err != nil {
-			t.Fatalf("[%d] Error decrypting with AAD: %v", i, err)
-		}
-
-		if !bytes.Equal(ptWithAAD, pt) {
-			t.Fatalf("[%d] Incorrect decryption [%x] != [%x]", i, ptWithAAD, pt)
-		}
+		require.Nil(t, err, "[%d] Error decrypting with AAD: %v", i, err)
+		require.Equal(t, ptWithAAD, pt, "[%d] Incorrect decryption [%x] != [%x]", i, ptWithAAD, pt)
 
 		ctWithoutAAD := aead.Seal(nil, nonce, pt, nil)
 		ptWithoutAAD, err := aead.Open(nil, nonce, ctWithoutAAD, nil)
-		if err != nil {
-			t.Fatalf("[%d] Error decrypting without AAD: %v", i, err)
-		}
+		require.Nil(t, err, "[%d] Error decrypting without AAD: %v", i, err)
+		require.Equal(t, ptWithoutAAD, pt, "[%d] Incorrect decryption [%x] != [%x]", i, ptWithoutAAD, pt)
 
-		if !bytes.Equal(ptWithoutAAD, pt) {
-			t.Fatalf("[%d] Incorrect decryption [%x] != [%x]", i, ptWithoutAAD, pt)
-		}
-
-		if bytes.Equal(ctWithAAD, ctWithoutAAD) {
-			t.Fatalf("[%d] AAD not included in ciphertext", i)
-		}
+		require.NotEqual(t, ctWithAAD, ctWithoutAAD, "[%d] AAD not included in ciphertext", i)
 	}
 }
 
