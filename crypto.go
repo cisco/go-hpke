@@ -18,8 +18,8 @@ import (
 	_ "crypto/sha256"
 	_ "crypto/sha512"
 
-	"git.schwanenlied.me/yawning/x448.git"
 	"github.com/cloudflare/circl/dh/sidh"
+	"github.com/cloudflare/circl/dh/x448"
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/curve25519"
 )
@@ -464,17 +464,17 @@ func (s x25519Scheme) PrivateKeySize() int {
 // ECDH with X448
 
 type x448PrivateKey struct {
-	val [56]byte
+	val x448.Key
 }
 
 func (priv x448PrivateKey) PublicKey() KEMPublicKey {
 	pub := &x448PublicKey{}
-	x448.ScalarBaseMult(&pub.val, &priv.val)
+	x448.KeyGen(&pub.val, &priv.val)
 	return pub
 }
 
 type x448PublicKey struct {
-	val [56]byte
+	val x448.Key
 }
 
 type x448Scheme struct {
@@ -552,8 +552,8 @@ func (s x448Scheme) DH(priv KEMPrivateKey, pub KEMPublicKey) ([]byte, error) {
 		return nil, fmt.Errorf("Public key not suitable for X448: %+v", pub)
 	}
 
-	var sharedSecret, zero [56]byte
-	x448.ScalarMult(&sharedSecret, &xPriv.val, &xPub.val)
+	var sharedSecret, zero x448.Key
+	x448.Shared(&sharedSecret, &xPriv.val, &xPub.val)
 	if subtle.ConstantTimeCompare(sharedSecret[:], zero[:]) == 1 {
 		return nil, fmt.Errorf("bad input point: low order point")
 	}
