@@ -20,6 +20,7 @@ import (
 
 	"github.com/cloudflare/circl/dh/sidh"
 	"github.com/cloudflare/circl/dh/x448"
+	"github.com/cloudflare/circl/kem/kyber/kyber512"
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/curve25519"
 )
@@ -738,6 +739,124 @@ func (s sikeScheme) setEphemeralKeyPair(skE KEMPrivateKey) {
 	panic("SIKE cannot use a pre-set ephemeral key pair")
 }
 
+///////////
+// Kyber512
+
+type kyber512PublicKey struct {
+	pub *kyber512.PublicKey
+}
+
+type kyber512PrivateKey struct {
+	priv *kyber512.PrivateKey
+	pub  *kyber512.PublicKey
+}
+
+func (priv kyber512PrivateKey) PublicKey() KEMPublicKey {
+	return &kyber512PublicKey{priv.pub}
+}
+
+type kyber512Scheme struct{}
+
+func (s kyber512Scheme) ID() KEMID {
+	return KEM_KYBER512
+}
+
+func (s kyber512Scheme) generateKeyPair(rand io.Reader) (KEMPrivateKey, KEMPublicKey, error) {
+	pub, priv, err := kyber512.GenerateKeyPair(rand)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return &kyber512PrivateKey{priv, pub}, &kyber512PublicKey{pub}, nil
+}
+
+func (s kyber512Scheme) DeriveKeyPair(ikm []byte) (KEMPrivateKey, KEMPublicKey, error) {
+	// DeriveKeyPair takes an input of length Nsk, which in the case of Kyber512
+	// is much larger than the required seed size.  So we just take the first part
+	// of it.
+	ikm = ikm[:kyber512.KeySeedSize]
+	pub, priv := kyber512.NewKeyFromSeed(ikm)
+	return &kyber512PrivateKey{priv, pub}, &kyber512PublicKey{pub}, nil
+}
+
+func (s kyber512Scheme) SerializePublicKey(pk KEMPublicKey) []byte {
+	if pk == nil {
+		return nil
+	}
+
+	raw := pk.(*kyber512PublicKey)
+	out := make([]byte, kyber512.PublicKeySize)
+	raw.pub.Pack(out)
+	return out
+}
+
+func (s kyber512Scheme) SerializePrivateKey(sk KEMPrivateKey) []byte {
+	if sk == nil {
+		return nil
+	}
+
+	raw := sk.(*kyber512PrivateKey)
+	out := make([]byte, kyber512.PrivateKeySize)
+	raw.pub.Pack(out)
+	return out
+}
+
+func (s kyber512Scheme) DeserializePublicKey(enc []byte) (KEMPublicKey, error) {
+	if len(enc) != kyber512.PublicKeySize {
+		return nil, fmt.Errorf("Invalid public key size: got %d, expected %d", len(enc), kyber512.PublicKeySize)
+	}
+
+	pub := &kyber512.PublicKey{}
+	pub.Unpack(enc)
+	return &kyber512PublicKey{pub}, nil
+}
+
+func (s kyber512Scheme) DeserializePrivateKey(enc []byte) (KEMPrivateKey, error) {
+	if len(enc) != kyber512.PrivateKeySize {
+		return nil, fmt.Errorf("Invalid private key size: got %d, expected %d", len(enc), kyber512.PrivateKeySize)
+	}
+
+	priv := &kyber512.PrivateKey{}
+	priv.Unpack(enc)
+	pub := priv.Public().(*kyber512.PublicKey)
+
+	return &kyber512PrivateKey{priv, pub}, nil
+}
+
+func (s kyber512Scheme) Encap(rand io.Reader, pkR KEMPublicKey) ([]byte, []byte, error) {
+	raw := pkR.(*kyber512PublicKey)
+
+	sharedSecret := make([]byte, kyber512.SharedKeySize)
+	enc := make([]byte, kyber512.CiphertextSize)
+	raw.pub.EncapsulateTo(enc, sharedSecret, nil)
+
+	return sharedSecret, enc, nil
+}
+
+func (s kyber512Scheme) Decap(enc []byte, skR KEMPrivateKey) ([]byte, error) {
+	raw := skR.(*kyber512PrivateKey)
+
+	if len(enc) != kyber512.CiphertextSize {
+		return nil, fmt.Errorf("Invalid encapsulated key size: got %d, expected %d", len(enc), kyber512.SharedKeySize)
+	}
+
+	sharedSecret := make([]byte, kyber512.SharedKeySize)
+	raw.priv.DecapsulateTo(sharedSecret, enc)
+	return sharedSecret, nil
+}
+
+func (s kyber512Scheme) PublicKeySize() int {
+	return kyber512.PublicKeySize
+}
+
+func (s kyber512Scheme) PrivateKeySize() int {
+	return kyber512.PrivateKeySize
+}
+
+func (s kyber512Scheme) setEphemeralKeyPair(skE KEMPrivateKey) {
+	panic("Kyber512 cannot use a pre-set ephemeral key pair")
+}
+
 //////////
 // AES-GCM
 
@@ -913,6 +1032,7 @@ const (
 	DHKEM_P521   KEMID = 0x0012
 	DHKEM_X25519 KEMID = 0x0020
 	DHKEM_X448   KEMID = 0x0021
+	KEM_KYBER512 KEMID = 0xFFFD
 	KEM_SIKE503  KEMID = 0xFFFE
 	KEM_SIKE751  KEMID = 0xFFFF
 )
@@ -922,6 +1042,7 @@ var kems = map[KEMID]KEMScheme{
 	DHKEM_X448:   &dhkemScheme{group: x448Scheme{}},
 	DHKEM_P256:   &dhkemScheme{group: ecdhScheme{curve: elliptic.P256(), KDF: hkdfScheme{hash: crypto.SHA256}}},
 	DHKEM_P521:   &dhkemScheme{group: ecdhScheme{curve: elliptic.P521(), KDF: hkdfScheme{hash: crypto.SHA512}}},
+	KEM_KYBER512: &kyber512Scheme{},
 	KEM_SIKE503:  &sikeScheme{field: sidh.Fp503, KDF: hkdfScheme{hash: crypto.SHA512}},
 	KEM_SIKE751:  &sikeScheme{field: sidh.Fp751, KDF: hkdfScheme{hash: crypto.SHA512}},
 }
@@ -936,6 +1057,8 @@ func newKEMScheme(kemID KEMID) (KEMScheme, bool) {
 		return &dhkemScheme{group: ecdhScheme{curve: elliptic.P256(), KDF: hkdfScheme{hash: crypto.SHA256}}}, true
 	case DHKEM_P521:
 		return &dhkemScheme{group: ecdhScheme{curve: elliptic.P521(), KDF: hkdfScheme{hash: crypto.SHA512}}}, true
+	case KEM_KYBER512:
+		return &kyber512Scheme{}, true
 	case KEM_SIKE503:
 		return &sikeScheme{field: sidh.Fp503, KDF: hkdfScheme{hash: crypto.SHA512}}, true
 	case KEM_SIKE751:
