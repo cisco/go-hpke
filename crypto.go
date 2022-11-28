@@ -20,6 +20,8 @@ import (
 
 	"github.com/cloudflare/circl/dh/sidh"
 	"github.com/cloudflare/circl/dh/x448"
+	"github.com/cloudflare/circl/kem"
+	"github.com/cloudflare/circl/kem/kyber/kyber1024"
 	"github.com/cloudflare/circl/kem/kyber/kyber512"
 	"github.com/cloudflare/circl/kem/kyber/kyber768"
 	"golang.org/x/crypto/chacha20poly1305"
@@ -740,232 +742,138 @@ func (s sikeScheme) setEphemeralKeyPair(skE KEMPrivateKey) {
 	panic("SIKE cannot use a pre-set ephemeral key pair")
 }
 
-///////////
-// Kyber512
+////////
+// Kyber
 
-type kyber512PublicKey = kyber512.PublicKey
+type kyberPublicKey = kem.PublicKey
 
-type kyber512PrivateKey struct {
-	priv *kyber512.PrivateKey
+type kyberPrivateKey struct {
+	priv kem.PrivateKey
 }
 
-func (priv kyber512PrivateKey) PublicKey() KEMPublicKey {
-	return priv.priv.Public().(*kyber512.PublicKey)
+func (priv kyberPrivateKey) PublicKey() KEMPublicKey {
+	return priv.priv.Public()
 }
 
-type kyber512Scheme struct{}
-
-func (s kyber512Scheme) ID() KEMID {
-	return KEM_KYBER512
+type kyberScheme struct {
+	scheme         kem.Scheme
+	id             KEMID
+	newKeyFromSeed func(ikm []byte) (KEMPrivateKey, KEMPublicKey, error)
 }
 
-func (s kyber512Scheme) generateKeyPair(rand io.Reader) (KEMPrivateKey, KEMPublicKey, error) {
-	pub, priv, err := kyber512.GenerateKeyPair(rand)
+func (s kyberScheme) ID() KEMID {
+	return s.id
+}
+
+func (s kyberScheme) generateKeyPair(rand io.Reader) (KEMPrivateKey, KEMPublicKey, error) {
+	pub, priv, err := s.scheme.GenerateKeyPair()
 	if err != nil {
 		return nil, nil, err
 	}
 
-	return &kyber512PrivateKey{priv}, pub, nil
+	return &kyberPrivateKey{priv}, pub, nil
 }
 
-func (s kyber512Scheme) DeriveKeyPair(ikm []byte) (KEMPrivateKey, KEMPublicKey, error) {
-	// DeriveKeyPair takes an input of length Nsk, which in the case of Kyber512
-	// is much larger than the required seed size.  So we just take the first part
-	// of it.
-	ikm = ikm[:kyber512.KeySeedSize]
-	pub, priv := kyber512.NewKeyFromSeed(ikm)
-	return &kyber512PrivateKey{priv}, pub, nil
+func (s kyberScheme) DeriveKeyPair(ikm []byte) (KEMPrivateKey, KEMPublicKey, error) {
+	return s.newKeyFromSeed(ikm)
 }
 
-func (s kyber512Scheme) SerializePublicKey(pk KEMPublicKey) []byte {
+func (s kyberScheme) SerializePublicKey(pk KEMPublicKey) []byte {
 	if pk == nil {
 		return nil
 	}
 
-	raw := pk.(kyber512PublicKey)
-	out := make([]byte, kyber512.PublicKeySize)
-	raw.Pack(out)
-	return out
-}
-
-func (s kyber512Scheme) SerializePrivateKey(sk KEMPrivateKey) []byte {
-	if sk == nil {
-		return nil
-	}
-
-	raw := sk.(*kyber512PrivateKey)
-	rawPub := raw.priv.Public().(*kyber512.PublicKey)
-	out := make([]byte, kyber512.PrivateKeySize)
-	rawPub.Pack(out)
-	return out
-}
-
-func (s kyber512Scheme) DeserializePublicKey(enc []byte) (KEMPublicKey, error) {
-	if len(enc) != kyber512.PublicKeySize {
-		return nil, fmt.Errorf("Invalid public key size: got %d, expected %d", len(enc), kyber512.PublicKeySize)
-	}
-
-	pub := &kyber512.PublicKey{}
-	pub.Unpack(enc)
-	return pub, nil
-}
-
-func (s kyber512Scheme) DeserializePrivateKey(enc []byte) (KEMPrivateKey, error) {
-	if len(enc) != kyber512.PrivateKeySize {
-		return nil, fmt.Errorf("Invalid private key size: got %d, expected %d", len(enc), kyber512.PrivateKeySize)
-	}
-
-	priv := &kyber512.PrivateKey{}
-	priv.Unpack(enc)
-	return &kyber512PrivateKey{priv}, nil
-}
-
-func (s kyber512Scheme) Encap(rand io.Reader, pkR KEMPublicKey) ([]byte, []byte, error) {
-	raw := pkR.(*kyber512PublicKey)
-
-	sharedSecret := make([]byte, kyber512.SharedKeySize)
-	enc := make([]byte, kyber512.CiphertextSize)
-	raw.EncapsulateTo(enc, sharedSecret, nil)
-
-	return sharedSecret, enc, nil
-}
-
-func (s kyber512Scheme) Decap(enc []byte, skR KEMPrivateKey) ([]byte, error) {
-	raw := skR.(*kyber512PrivateKey)
-
-	if len(enc) != kyber512.CiphertextSize {
-		return nil, fmt.Errorf("Invalid encapsulated key size: got %d, expected %d", len(enc), kyber512.SharedKeySize)
-	}
-
-	sharedSecret := make([]byte, kyber512.SharedKeySize)
-	raw.priv.DecapsulateTo(sharedSecret, enc)
-	return sharedSecret, nil
-}
-
-func (s kyber512Scheme) PublicKeySize() int {
-	return kyber512.PublicKeySize
-}
-
-func (s kyber512Scheme) PrivateKeySize() int {
-	return kyber512.PrivateKeySize
-}
-
-func (s kyber512Scheme) setEphemeralKeyPair(skE KEMPrivateKey) {
-	panic("Kyber512 cannot use a pre-set ephemeral key pair")
-}
-
-///////////
-// Kyber768
-
-type kyber768PublicKey = kyber768.PublicKey
-
-type kyber768PrivateKey struct {
-	priv *kyber768.PrivateKey
-}
-
-func (priv kyber768PrivateKey) PublicKey() KEMPublicKey {
-	return priv.priv.Public().(*kyber768.PublicKey)
-}
-
-type kyber768Scheme struct{}
-
-func (s kyber768Scheme) ID() KEMID {
-	return KEM_KYBER768
-}
-
-func (s kyber768Scheme) generateKeyPair(rand io.Reader) (KEMPrivateKey, KEMPublicKey, error) {
-	pub, priv, err := kyber768.GenerateKeyPair(rand)
+	out, err := pk.(kyberPublicKey).MarshalBinary()
 	if err != nil {
-		return nil, nil, err
+		panic(err)
 	}
 
-	return &kyber768PrivateKey{priv}, pub, nil
-}
-
-func (s kyber768Scheme) DeriveKeyPair(ikm []byte) (KEMPrivateKey, KEMPublicKey, error) {
-	// DeriveKeyPair takes an input of length Nsk, which in the case of Kyber768
-	// is much larger than the required seed size.  So we just take the first part
-	// of it.
-	ikm = ikm[:kyber768.KeySeedSize]
-	pub, priv := kyber768.NewKeyFromSeed(ikm)
-	return &kyber768PrivateKey{priv}, pub, nil
-}
-
-func (s kyber768Scheme) SerializePublicKey(pk KEMPublicKey) []byte {
-	if pk == nil {
-		return nil
-	}
-
-	raw := pk.(kyber768PublicKey)
-	out := make([]byte, kyber768.PublicKeySize)
-	raw.Pack(out)
 	return out
 }
 
-func (s kyber768Scheme) SerializePrivateKey(sk KEMPrivateKey) []byte {
+func (s kyberScheme) SerializePrivateKey(sk KEMPrivateKey) []byte {
 	if sk == nil {
 		return nil
 	}
 
-	raw := sk.(*kyber768PrivateKey)
-	rawPub := raw.priv.Public().(*kyber768.PublicKey)
-	out := make([]byte, kyber768.PrivateKeySize)
-	rawPub.Pack(out)
+	out, err := sk.(*kyberPrivateKey).priv.MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+
 	return out
 }
 
-func (s kyber768Scheme) DeserializePublicKey(enc []byte) (KEMPublicKey, error) {
-	if len(enc) != kyber768.PublicKeySize {
-		return nil, fmt.Errorf("Invalid public key size: got %d, expected %d", len(enc), kyber768.PublicKeySize)
+func (s kyberScheme) DeserializePublicKey(enc []byte) (KEMPublicKey, error) {
+	return s.scheme.UnmarshalBinaryPublicKey(enc)
+}
+
+func (s kyberScheme) DeserializePrivateKey(enc []byte) (KEMPrivateKey, error) {
+	priv, err := s.scheme.UnmarshalBinaryPrivateKey(enc)
+	if err != nil {
+		return nil, err
 	}
 
-	pub := &kyber768.PublicKey{}
-	pub.Unpack(enc)
-	return pub, nil
+	return &kyberPrivateKey{priv}, nil
 }
 
-func (s kyber768Scheme) DeserializePrivateKey(enc []byte) (KEMPrivateKey, error) {
-	if len(enc) != kyber768.PrivateKeySize {
-		return nil, fmt.Errorf("Invalid private key size: got %d, expected %d", len(enc), kyber768.PrivateKeySize)
+func (s kyberScheme) Encap(rand io.Reader, pkR KEMPublicKey) ([]byte, []byte, error) {
+	raw := pkR.(kyberPublicKey)
+	ct, ss, err := s.scheme.Encapsulate(raw)
+	return ss, ct, err
+}
+
+func (s kyberScheme) Decap(enc []byte, skR KEMPrivateKey) ([]byte, error) {
+	raw := skR.(*kyberPrivateKey).priv
+	return s.scheme.Decapsulate(raw, enc)
+}
+
+func (s kyberScheme) PublicKeySize() int {
+	return s.scheme.PublicKeySize()
+}
+
+func (s kyberScheme) PrivateKeySize() int {
+	return s.scheme.PrivateKeySize()
+}
+
+func (s kyberScheme) setEphemeralKeyPair(skE KEMPrivateKey) {
+	panic("Kyber cannot use a pre-set ephemeral key pair")
+}
+
+func newKyber512Scheme() *kyberScheme {
+	return &kyberScheme{
+		scheme: kyber512.Scheme(),
+		id:     KEM_KYBER512,
+		newKeyFromSeed: func(ikm []byte) (KEMPrivateKey, KEMPublicKey, error) {
+			ikm = ikm[:kyber512.KeySeedSize]
+			pub, priv := kyber512.NewKeyFromSeed(ikm)
+			return &kyberPrivateKey{priv}, pub, nil
+		},
 	}
-
-	priv := &kyber768.PrivateKey{}
-	priv.Unpack(enc)
-	return &kyber768PrivateKey{priv}, nil
 }
 
-func (s kyber768Scheme) Encap(rand io.Reader, pkR KEMPublicKey) ([]byte, []byte, error) {
-	raw := pkR.(*kyber768PublicKey)
-
-	sharedSecret := make([]byte, kyber768.SharedKeySize)
-	enc := make([]byte, kyber768.CiphertextSize)
-	raw.EncapsulateTo(enc, sharedSecret, nil)
-
-	return sharedSecret, enc, nil
-}
-
-func (s kyber768Scheme) Decap(enc []byte, skR KEMPrivateKey) ([]byte, error) {
-	raw := skR.(*kyber768PrivateKey)
-
-	if len(enc) != kyber768.CiphertextSize {
-		return nil, fmt.Errorf("Invalid encapsulated key size: got %d, expected %d", len(enc), kyber768.SharedKeySize)
+func newKyber768Scheme() *kyberScheme {
+	return &kyberScheme{
+		scheme: kyber768.Scheme(),
+		id:     KEM_KYBER768,
+		newKeyFromSeed: func(ikm []byte) (KEMPrivateKey, KEMPublicKey, error) {
+			ikm = ikm[:kyber768.KeySeedSize]
+			pub, priv := kyber768.NewKeyFromSeed(ikm)
+			return &kyberPrivateKey{priv}, pub, nil
+		},
 	}
-
-	sharedSecret := make([]byte, kyber768.SharedKeySize)
-	raw.priv.DecapsulateTo(sharedSecret, enc)
-	return sharedSecret, nil
 }
 
-func (s kyber768Scheme) PublicKeySize() int {
-	return kyber768.PublicKeySize
-}
-
-func (s kyber768Scheme) PrivateKeySize() int {
-	return kyber768.PrivateKeySize
-}
-
-func (s kyber768Scheme) setEphemeralKeyPair(skE KEMPrivateKey) {
-	panic("Kyber768 cannot use a pre-set ephemeral key pair")
+func newKyber1024Scheme() *kyberScheme {
+	return &kyberScheme{
+		scheme: kyber1024.Scheme(),
+		id:     KEM_KYBER1024,
+		newKeyFromSeed: func(ikm []byte) (KEMPrivateKey, KEMPublicKey, error) {
+			ikm = ikm[:kyber1024.KeySeedSize]
+			pub, priv := kyber1024.NewKeyFromSeed(ikm)
+			return &kyberPrivateKey{priv}, pub, nil
+		},
+	}
 }
 
 //////////
@@ -1139,25 +1047,27 @@ func (s hkdfScheme) OutputSize() int {
 type KEMID uint16
 
 const (
-	DHKEM_P256   KEMID = 0x0010
-	DHKEM_P521   KEMID = 0x0012
-	DHKEM_X25519 KEMID = 0x0020
-	DHKEM_X448   KEMID = 0x0021
-	KEM_KYBER512 KEMID = 0xFFFC
-	KEM_KYBER768 KEMID = 0xFFFD
-	KEM_SIKE503  KEMID = 0xFFFE
-	KEM_SIKE751  KEMID = 0xFFFF
+	DHKEM_P256    KEMID = 0x0010
+	DHKEM_P521    KEMID = 0x0012
+	DHKEM_X25519  KEMID = 0x0020
+	DHKEM_X448    KEMID = 0x0021
+	KEM_KYBER512  KEMID = 0xFFFB
+	KEM_KYBER768  KEMID = 0xFFFC
+	KEM_KYBER1024 KEMID = 0xFFFD
+	KEM_SIKE503   KEMID = 0xFFFE
+	KEM_SIKE751   KEMID = 0xFFFF
 )
 
 var kems = map[KEMID]KEMScheme{
-	DHKEM_X25519: &dhkemScheme{group: x25519Scheme{}},
-	DHKEM_X448:   &dhkemScheme{group: x448Scheme{}},
-	DHKEM_P256:   &dhkemScheme{group: ecdhScheme{curve: elliptic.P256(), KDF: hkdfScheme{hash: crypto.SHA256}}},
-	DHKEM_P521:   &dhkemScheme{group: ecdhScheme{curve: elliptic.P521(), KDF: hkdfScheme{hash: crypto.SHA512}}},
-	KEM_KYBER512: &kyber512Scheme{},
-	KEM_KYBER768: &kyber768Scheme{},
-	KEM_SIKE503:  &sikeScheme{field: sidh.Fp503, KDF: hkdfScheme{hash: crypto.SHA512}},
-	KEM_SIKE751:  &sikeScheme{field: sidh.Fp751, KDF: hkdfScheme{hash: crypto.SHA512}},
+	DHKEM_X25519:  &dhkemScheme{group: x25519Scheme{}},
+	DHKEM_X448:    &dhkemScheme{group: x448Scheme{}},
+	DHKEM_P256:    &dhkemScheme{group: ecdhScheme{curve: elliptic.P256(), KDF: hkdfScheme{hash: crypto.SHA256}}},
+	DHKEM_P521:    &dhkemScheme{group: ecdhScheme{curve: elliptic.P521(), KDF: hkdfScheme{hash: crypto.SHA512}}},
+	KEM_KYBER512:  newKyber512Scheme(),
+	KEM_KYBER768:  newKyber768Scheme(),
+	KEM_KYBER1024: newKyber1024Scheme(),
+	KEM_SIKE503:   &sikeScheme{field: sidh.Fp503, KDF: hkdfScheme{hash: crypto.SHA512}},
+	KEM_SIKE751:   &sikeScheme{field: sidh.Fp751, KDF: hkdfScheme{hash: crypto.SHA512}},
 }
 
 func newKEMScheme(kemID KEMID) (KEMScheme, bool) {
@@ -1171,9 +1081,11 @@ func newKEMScheme(kemID KEMID) (KEMScheme, bool) {
 	case DHKEM_P521:
 		return &dhkemScheme{group: ecdhScheme{curve: elliptic.P521(), KDF: hkdfScheme{hash: crypto.SHA512}}}, true
 	case KEM_KYBER512:
-		return &kyber512Scheme{}, true
+		return newKyber512Scheme(), true
 	case KEM_KYBER768:
-		return &kyber768Scheme{}, true
+		return newKyber768Scheme(), true
+	case KEM_KYBER1024:
+		return newKyber1024Scheme(), true
 	case KEM_SIKE503:
 		return &sikeScheme{field: sidh.Fp503, KDF: hkdfScheme{hash: crypto.SHA512}}, true
 	case KEM_SIKE751:
