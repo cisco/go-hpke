@@ -742,17 +742,14 @@ func (s sikeScheme) setEphemeralKeyPair(skE KEMPrivateKey) {
 ///////////
 // Kyber512
 
-type kyber512PublicKey struct {
-	pub *kyber512.PublicKey
-}
+type kyber512PublicKey = kyber512.PublicKey
 
 type kyber512PrivateKey struct {
 	priv *kyber512.PrivateKey
-	pub  *kyber512.PublicKey
 }
 
 func (priv kyber512PrivateKey) PublicKey() KEMPublicKey {
-	return &kyber512PublicKey{priv.pub}
+	return priv.priv.Public().(*kyber512.PublicKey)
 }
 
 type kyber512Scheme struct{}
@@ -767,7 +764,7 @@ func (s kyber512Scheme) generateKeyPair(rand io.Reader) (KEMPrivateKey, KEMPubli
 		return nil, nil, err
 	}
 
-	return &kyber512PrivateKey{priv, pub}, &kyber512PublicKey{pub}, nil
+	return &kyber512PrivateKey{priv}, pub, nil
 }
 
 func (s kyber512Scheme) DeriveKeyPair(ikm []byte) (KEMPrivateKey, KEMPublicKey, error) {
@@ -776,7 +773,7 @@ func (s kyber512Scheme) DeriveKeyPair(ikm []byte) (KEMPrivateKey, KEMPublicKey, 
 	// of it.
 	ikm = ikm[:kyber512.KeySeedSize]
 	pub, priv := kyber512.NewKeyFromSeed(ikm)
-	return &kyber512PrivateKey{priv, pub}, &kyber512PublicKey{pub}, nil
+	return &kyber512PrivateKey{priv}, pub, nil
 }
 
 func (s kyber512Scheme) SerializePublicKey(pk KEMPublicKey) []byte {
@@ -784,9 +781,9 @@ func (s kyber512Scheme) SerializePublicKey(pk KEMPublicKey) []byte {
 		return nil
 	}
 
-	raw := pk.(*kyber512PublicKey)
+	raw := pk.(kyber512PublicKey)
 	out := make([]byte, kyber512.PublicKeySize)
-	raw.pub.Pack(out)
+	raw.Pack(out)
 	return out
 }
 
@@ -796,8 +793,9 @@ func (s kyber512Scheme) SerializePrivateKey(sk KEMPrivateKey) []byte {
 	}
 
 	raw := sk.(*kyber512PrivateKey)
+	rawPub := raw.priv.Public().(*kyber512.PublicKey)
 	out := make([]byte, kyber512.PrivateKeySize)
-	raw.pub.Pack(out)
+	rawPub.Pack(out)
 	return out
 }
 
@@ -808,7 +806,7 @@ func (s kyber512Scheme) DeserializePublicKey(enc []byte) (KEMPublicKey, error) {
 
 	pub := &kyber512.PublicKey{}
 	pub.Unpack(enc)
-	return &kyber512PublicKey{pub}, nil
+	return (*kyber512PublicKey)(pub), nil
 }
 
 func (s kyber512Scheme) DeserializePrivateKey(enc []byte) (KEMPrivateKey, error) {
@@ -818,9 +816,7 @@ func (s kyber512Scheme) DeserializePrivateKey(enc []byte) (KEMPrivateKey, error)
 
 	priv := &kyber512.PrivateKey{}
 	priv.Unpack(enc)
-	pub := priv.Public().(*kyber512.PublicKey)
-
-	return &kyber512PrivateKey{priv, pub}, nil
+	return &kyber512PrivateKey{priv}, nil
 }
 
 func (s kyber512Scheme) Encap(rand io.Reader, pkR KEMPublicKey) ([]byte, []byte, error) {
@@ -828,7 +824,7 @@ func (s kyber512Scheme) Encap(rand io.Reader, pkR KEMPublicKey) ([]byte, []byte,
 
 	sharedSecret := make([]byte, kyber512.SharedKeySize)
 	enc := make([]byte, kyber512.CiphertextSize)
-	raw.pub.EncapsulateTo(enc, sharedSecret, nil)
+	raw.EncapsulateTo(enc, sharedSecret, nil)
 
 	return sharedSecret, enc, nil
 }
