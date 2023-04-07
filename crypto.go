@@ -1,24 +1,20 @@
 package hpke
 
 import (
-	"bytes"
 	"crypto"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/elliptic"
 	"crypto/hmac"
-	"crypto/rand"
 	"crypto/subtle"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"math/big"
-	mrand "math/rand"
 
 	_ "crypto/sha256"
 	_ "crypto/sha512"
 
-	"github.com/cloudflare/circl/dh/sidh"
 	"github.com/cloudflare/circl/dh/x448"
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/curve25519"
@@ -569,175 +565,6 @@ func (s x448Scheme) PrivateKeySize() int {
 	return 56
 }
 
-///////
-// SIKE
-
-type sikePublicKey struct {
-	field uint8
-	pub   *sidh.PublicKey
-}
-
-type sikePrivateKey struct {
-	field uint8
-	priv  *sidh.PrivateKey
-	pub   *sidh.PublicKey
-}
-
-func (priv sikePrivateKey) PublicKey() KEMPublicKey {
-	return &sikePublicKey{priv.field, priv.pub}
-}
-
-type sikeScheme struct {
-	field uint8
-	KDF   KDFScheme
-}
-
-func (s sikeScheme) internalKDF() KDFScheme {
-	return s.KDF
-}
-
-func (s sikeScheme) ID() KEMID {
-	switch s.field {
-	case sidh.Fp503:
-		return KEM_SIKE503
-	case sidh.Fp751:
-		return KEM_SIKE751
-	}
-	panic(fmt.Sprintf("Unsupported field: %d", s.field))
-}
-
-func (s sikeScheme) generateKeyPair(rand io.Reader) (KEMPrivateKey, KEMPublicKey, error) {
-	rawPriv := sidh.NewPrivateKey(s.field, sidh.KeyVariantSike)
-	err := rawPriv.Generate(rand)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	rawPub := sidh.NewPublicKey(s.field, sidh.KeyVariantSike)
-	rawPriv.GeneratePublicKey(rawPub)
-
-	priv := &sikePrivateKey{s.field, rawPriv, rawPub}
-	return priv, priv.PublicKey(), nil
-}
-
-func (s sikeScheme) DeriveKeyPair(ikm []byte) (KEMPrivateKey, KEMPublicKey, error) {
-	// Note: DeriveKeyPair is not specified for SIKE, so we just use IKM to
-	// seed a DRBG, and then re-use the other APIs for generating key pairs
-	// from randomness.
-	var seed int64
-	ikmReader := bytes.NewReader(ikm)
-	if err := binary.Read(ikmReader, binary.BigEndian, &seed); err != nil {
-		return nil, nil, fmt.Errorf("Error deriving key pair")
-	}
-
-	source := mrand.NewSource(seed)
-	return s.generateKeyPair(mrand.New(source))
-}
-
-func (s sikeScheme) SerializePublicKey(pk KEMPublicKey) []byte {
-	if pk == nil {
-		return nil
-	}
-	raw := pk.(*sikePublicKey)
-	out := make([]byte, raw.pub.Size())
-	raw.pub.Export(out)
-	return out
-}
-
-func (s sikeScheme) SerializePrivateKey(sk KEMPrivateKey) []byte {
-	panic("Not implemented")
-	return nil
-}
-
-func (s sikeScheme) DeserializePublicKey(enc []byte) (KEMPublicKey, error) {
-	rawPub := sidh.NewPublicKey(s.field, sidh.KeyVariantSike)
-	if len(enc) != rawPub.Size() {
-		return nil, fmt.Errorf("Invalid public key size: got %d, expected %d", len(enc), rawPub.Size())
-	}
-
-	err := rawPub.Import(enc)
-	if err != nil {
-		return nil, err
-	}
-
-	return &sikePublicKey{s.field, rawPub}, nil
-}
-
-func (s sikeScheme) DeserializePrivateKey(enc []byte) (KEMPrivateKey, error) {
-	panic("Not implemented")
-	return nil, nil
-}
-
-func (s sikeScheme) newKEM(rand io.Reader) (*sidh.KEM, error) {
-	switch s.field {
-	case sidh.Fp503:
-		return sidh.NewSike503(rand), nil
-	case sidh.Fp751:
-		return sidh.NewSike751(rand), nil
-	}
-	return nil, fmt.Errorf("Invalid field")
-}
-
-func (s sikeScheme) Encap(rand io.Reader, pkR KEMPublicKey) ([]byte, []byte, error) {
-	raw := pkR.(*sikePublicKey)
-
-	kem, err := s.newKEM(rand)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	enc := make([]byte, kem.CiphertextSize())
-	sharedSecret := make([]byte, s.KDF.OutputSize())
-	err = kem.Encapsulate(enc, sharedSecret, raw.pub)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return sharedSecret, enc, nil
-}
-
-type panicReader struct{}
-
-func (p panicReader) Read(unused []byte) (int, error) {
-	panic("Should not read")
-}
-
-func (s sikeScheme) Decap(enc []byte, skR KEMPrivateKey) ([]byte, error) {
-	raw := skR.(*sikePrivateKey)
-
-	kem, err := s.newKEM(panicReader{})
-	if err != nil {
-		return nil, err
-	}
-
-	sharedSecret := make([]byte, s.KDF.OutputSize())
-	err = kem.Decapsulate(sharedSecret, raw.priv, raw.pub, enc)
-	if err != nil {
-		return nil, err
-	}
-
-	return sharedSecret, nil
-}
-
-func (s sikeScheme) PublicKeySize() int {
-	rawPub := sidh.NewPublicKey(s.field, sidh.KeyVariantSike)
-	return rawPub.Size()
-}
-
-func (s sikeScheme) PrivateKeySize() int {
-	rawPriv := sidh.NewPrivateKey(s.field, sidh.KeyVariantSike)
-	err := rawPriv.Generate(rand.Reader)
-	if err != nil {
-		panic("PrivateKeySize failed")
-	}
-
-	return rawPriv.Size()
-}
-
-func (s sikeScheme) setEphemeralKeyPair(skE KEMPrivateKey) {
-	panic("SIKE cannot use a pre-set ephemeral key pair")
-}
-
 //////////
 // AES-GCM
 
@@ -913,8 +740,12 @@ const (
 	DHKEM_P521   KEMID = 0x0012
 	DHKEM_X25519 KEMID = 0x0020
 	DHKEM_X448   KEMID = 0x0021
-	KEM_SIKE503  KEMID = 0xFFFE
-	KEM_SIKE751  KEMID = 0xFFFF
+
+	// The following identifiers were used for prototype SIKE integration.  Since
+	// SIKE has been broken, we have removed this prototype, but in case anyone is
+	// using these identifiers, we list them here as reserved.
+	reserved1 KEMID = 0xFFFE // Was KEM_SIKE503
+	reserved2 KEMID = 0xFFFF // Was KEM_SIKE751
 )
 
 var kems = map[KEMID]KEMScheme{
@@ -922,8 +753,6 @@ var kems = map[KEMID]KEMScheme{
 	DHKEM_X448:   &dhkemScheme{group: x448Scheme{}},
 	DHKEM_P256:   &dhkemScheme{group: ecdhScheme{curve: elliptic.P256(), KDF: hkdfScheme{hash: crypto.SHA256}}},
 	DHKEM_P521:   &dhkemScheme{group: ecdhScheme{curve: elliptic.P521(), KDF: hkdfScheme{hash: crypto.SHA512}}},
-	KEM_SIKE503:  &sikeScheme{field: sidh.Fp503, KDF: hkdfScheme{hash: crypto.SHA512}},
-	KEM_SIKE751:  &sikeScheme{field: sidh.Fp751, KDF: hkdfScheme{hash: crypto.SHA512}},
 }
 
 func newKEMScheme(kemID KEMID) (KEMScheme, bool) {
@@ -936,10 +765,6 @@ func newKEMScheme(kemID KEMID) (KEMScheme, bool) {
 		return &dhkemScheme{group: ecdhScheme{curve: elliptic.P256(), KDF: hkdfScheme{hash: crypto.SHA256}}}, true
 	case DHKEM_P521:
 		return &dhkemScheme{group: ecdhScheme{curve: elliptic.P521(), KDF: hkdfScheme{hash: crypto.SHA512}}}, true
-	case KEM_SIKE503:
-		return &sikeScheme{field: sidh.Fp503, KDF: hkdfScheme{hash: crypto.SHA512}}, true
-	case KEM_SIKE751:
-		return &sikeScheme{field: sidh.Fp751, KDF: hkdfScheme{hash: crypto.SHA512}}, true
 	default:
 		return nil, false
 	}
